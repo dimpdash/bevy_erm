@@ -1,0 +1,1 @@
+for<'a, 'b, 'c, 'd, 'e> fn(bevy_ecs::system::Query<'a, 'b, (bevy_ecs::entity::Entity, &'c Position, &'d Velocity)>, bevy_ecs::event::EventWriter<'e, PositionChanged>) {gen_move_updates}
