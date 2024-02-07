@@ -196,12 +196,6 @@ pub struct SqliteDatabaseResource {
 impl Default for SqliteDatabaseResource {
     fn default() -> Self {
         let pool= block_on(SqlitePool::connect("sqlite::memory:")).unwrap();
-        block_on(sqlx::query("CREATE TABLE person (id INTEGER PRIMARY KEY, age INTEGER)")
-            .execute(&pool)).unwrap();
-        block_on(sqlx::query("INSERT INTO person (id, age) VALUES (?, ?)")
-            .bind(0)
-            .bind(10)
-            .execute(&pool)).unwrap();
 
         SqliteDatabaseResource {
             pool
@@ -216,6 +210,16 @@ impl DatabaseResource for SqliteDatabaseResource {
         &self.pool
     }
 
+}
+
+fn populate_db(db: ResMut<SqliteDatabaseResource>) {
+    let conn = db.get_connection();
+    block_on(sqlx::query("CREATE TABLE person (id INTEGER PRIMARY KEY, age INTEGER)")
+    .execute(conn)).unwrap();
+    block_on(sqlx::query("INSERT INTO person (id, age) VALUES (?, ?)")
+        .bind(0)
+        .bind(15)
+        .execute(conn)).unwrap();
 }
 
 #[tokio::main]
@@ -258,6 +262,7 @@ async fn main() {
 
     // Add our system to the schedule
     // schedule.add_systems(movement);
+    schedule.add_systems(populate_db.before(increment_age_system));
     schedule.add_systems(increment_age_system.before(lookup_db_query_system));
     schedule.add_systems(lookup_db_query_system);
     // schedule.add_systems(movement_changes);
