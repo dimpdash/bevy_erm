@@ -262,7 +262,10 @@ async fn main() {
 
     // Add our system to the schedule
     // schedule.add_systems(movement);
-    schedule.add_systems(populate_db.before(increment_age_system));
+    let mut startup_schedule = Schedule::default();
+    startup_schedule.add_systems(populate_db.before(increment_age_system));
+    startup_schedule.run(&mut world);
+
     schedule.add_systems(increment_age_system.before(lookup_db_query_system));
     schedule.add_systems(lookup_db_query_system);
     // schedule.add_systems(movement_changes);
