@@ -1,5 +1,5 @@
-use bevy_ecs::{component::Component, entity, prelude::*, schedule::LazyLoadedExecutor, system::SystemParam, world};
-use bevy_reflect::{prelude::*, DynamicStruct};
+use bevy_ecs::{component::Component, prelude::*, schedule::LazyLoadedExecutor, system::SystemParam};
+use bevy_reflect::{prelude::*};
 
 use sqlx::{pool::PoolConnection, sqlite::*, Connection, Database, Row};
 use std::env;
@@ -149,7 +149,7 @@ impl DatabaseQueryInfo for AgeQuery {
     type Component = Age;
     type Database = SqliteDatabaseResource;
 
-    fn get_component<DB>(conn: &PoolConnection<DB>, db_entity: &DatabaseEntity) -> Result<Age, ()> 
+    fn get_component<DB>(_conn: &PoolConnection<DB>, db_entity: &DatabaseEntity) -> Result<Age, ()> 
         where DB: Database 
     {
         let conn = block_on(SqlitePool::connect(&env::var("DATABASE_URL").unwrap())).unwrap();
@@ -160,7 +160,7 @@ impl DatabaseQueryInfo for AgeQuery {
         Ok(Age {age: age})
     }
 
-    fn write_component(db_entity: &DatabaseEntity, component: Age) -> Result<(), ()> {
+    fn write_component(_db_entity: &DatabaseEntity, _component: Age) -> Result<(), ()> {
         Ok(())
     }
 
@@ -197,7 +197,7 @@ pub struct SqliteDatabaseResource {
 
 async fn setup() -> SqlitePool {
     let pool: SqlitePool = SqlitePool::connect("sqlite::memory:").await.unwrap();
-    let f = sqlx::query("CREATE TABLE person (id INTEGER PRIMARY KEY, age INTEGER)")
+    let _f = sqlx::query("CREATE TABLE person (id INTEGER PRIMARY KEY, age INTEGER)")
         .execute(&pool)
         .await
         .unwrap();
@@ -252,7 +252,7 @@ async fn main() {
 
     add_event::<PositionChanged>(&mut world);
 
-    let mut query = world.query::<(Entity)>();
+    let mut query = world.query::<Entity>();
 
     let mut entities = vec![];
     for entity in query.iter(&world) {

@@ -1,6 +1,6 @@
 #[cfg(feature = "trace")]
 use bevy_utils::tracing::info_span;
-use fixedbitset::FixedBitSet;
+
 use std::panic::AssertUnwindSafe;
 
 use crate::{
@@ -23,7 +23,7 @@ impl SystemExecutor for LazyLoadedExecutor {
         // do nothing. simple executor does not do a final sync
     }
 
-    fn init(&mut self, schedule: &SystemSchedule) {
+    fn init(&mut self, _schedule: &SystemSchedule) {
     }
 
     fn run(&mut self, schedule: &mut SystemSchedule, world: &mut World) {
