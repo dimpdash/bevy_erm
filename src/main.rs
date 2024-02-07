@@ -1,8 +1,8 @@
-use bevy_ecs::{component::Component, prelude::*, schedule::LazyLoadedExecutor, system::SystemParam, world};
+use bevy_ecs::{component::Component, entity, prelude::*, schedule::LazyLoadedExecutor, system::SystemParam, world};
 use bevy_reflect::{prelude::*, DynamicStruct};
 
-use sqlx::{sqlite::*, Connection};
-
+use sqlx::{pool::PoolConnection, sqlite::*, Connection, Database, Row};
+use std::env;
 use futures::executor::block_on;
 
 #[derive(Event)]
@@ -73,7 +73,8 @@ pub trait DatabaseQueryInfo: Sized {
     type Component: Component + Reflect + Default;
     type Database: DatabaseResource;
 
-    fn get_component(db_entity: &DatabaseEntity) -> Result<Self::Component, ()>;
+    fn get_component<Db> (conn: &PoolConnection<Db>, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
+        where Db: Database;
     fn write_component(db_entity: &DatabaseEntity, component: Self::Component) -> Result<(), ()>;
 }
 
@@ -90,7 +91,9 @@ pub struct DatabaseQuery<'w, I:DatabaseQueryInfo + 'static> {
 
 impl<'w, I:DatabaseQueryInfo> DatabaseQuery<'w, I> {
     pub fn get(&mut self, db_entity : &DatabaseEntity) -> Result<I::Component, ()> {
-        I::get_component(db_entity)
+        let conn = self.db.get_connection();
+
+        I::get_component(&conn, db_entity)
     }
 
     pub fn write(&mut self, db_entity : &DatabaseEntity, component: I::Component) -> Result<(), ()> {
@@ -146,10 +149,15 @@ impl DatabaseQueryInfo for AgeQuery {
     type Component = Age;
     type Database = SqliteDatabaseResource;
 
-    fn get_component(db_entity: &DatabaseEntity) -> Result<Age, ()> {
-        
-        
-        Ok(Age {age: 5})
+    fn get_component<DB>(conn: &PoolConnection<DB>, db_entity: &DatabaseEntity) -> Result<Age, ()> 
+        where DB: Database 
+    {
+        let conn = block_on(SqlitePool::connect(&env::var("DATABASE_URL").unwrap())).unwrap();
+
+
+        let age = block_on(sqlx::query("SELECT age FROM person WHERE id = ?").bind(db_entity.id).fetch_one(&conn)).unwrap();
+        let age = age.get(0);
+        Ok(Age {age: age})
     }
 
     fn write_component(db_entity: &DatabaseEntity, component: Age) -> Result<(), ()> {
@@ -178,24 +186,49 @@ fn increment_age_system(mut db_query: DatabaseQuery<AgeQuery>) {
 }
 
 pub trait DatabaseResource: Resource + Default {
-
+    type Database: sqlx::Database;
+    fn get_connection(&self) -> PoolConnection<Self::Database>;
 }
 
 #[derive(Resource)]
 pub struct SqliteDatabaseResource {
-    conn: SqlitePool
+    pool: SqlitePool
+}
+
+async fn setup() -> SqlitePool {
+    let pool: SqlitePool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+    let f = sqlx::query("CREATE TABLE person (id INTEGER PRIMARY KEY, age INTEGER)")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    pool
 }
 
 impl Default for SqliteDatabaseResource {
     fn default() -> Self {
-        let conn = block_on(SqlitePool::connect("sqlite::memory:")).unwrap();
+        let pool= block_on(SqlitePool::connect("sqlite::memory:")).unwrap();
+        block_on(sqlx::query("CREATE TABLE person (id INTEGER PRIMARY KEY, age INTEGER)")
+            .execute(&pool)).unwrap();
+        block_on(sqlx::query("INSERT INTO person (id, age) VALUES (?)")
+            .bind(0)
+            .bind(10)
+            .execute(&pool)).unwrap();
+
         SqliteDatabaseResource {
-            conn: conn
+            pool
         }
     }
 }
 
-impl DatabaseResource for SqliteDatabaseResource {}
+impl DatabaseResource for SqliteDatabaseResource {
+    type Database = Sqlite;
+    fn get_connection(&self) -> PoolConnection<Self::Database> {
+        let conn = block_on(self.pool.acquire()).unwrap();
+        conn
+    }
+
+}
 
 #[tokio::main]
 async fn main() {
@@ -208,15 +241,10 @@ async fn main() {
         Velocity { x: 1.0, y: 0.0 },
     ));
 
-    let conn = SqlitePool::connect("sqlite::memory:").await.unwrap();
-
-    sqlx::query("CREATE TABLE person (id INTEGER PRIMARY KEY, age INTEGER)")
-        .execute(&conn)
-        .await.unwrap();
-
     if !world.contains_resource::<SqliteDatabaseResource>() {
         world.init_resource::<SqliteDatabaseResource>();
     }
+
 
     // Create a new Schedule, which defines an execution strategy for Systems
     let executor = Box::new(LazyLoadedExecutor::new());
