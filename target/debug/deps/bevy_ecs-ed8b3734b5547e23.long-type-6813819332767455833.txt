@@ -1,1 +1,0 @@
-for<'a, 'b, 'c, 'd, 'e, 'f> fn(bevy_ecs::system::Query<'a, 'b, &'c mut Position>, bevy_ecs::event::EventReader<'d, 'e, PositionChanged>, &'f mut bevy_ecs::world::World) {movement_changes}
