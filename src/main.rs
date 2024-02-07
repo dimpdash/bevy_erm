@@ -1,9 +1,9 @@
-use bevy_ecs::{component::Component, prelude::*, schedule::LazyLoadedExecutor, system::SystemParam};
-use bevy_reflect::{prelude::*};
+use std::ops::Deref;
+
+use bevy_ecs::{component::Component, prelude::*, system::SystemParam};
+use bevy_reflect::prelude::*;
 use bevy_mod_index::prelude::*;
-use bevy_utils::petgraph::visit::Data;
-use sqlx::{pool::PoolConnection, sqlite::*, Connection, Database, Row};
-use std::{any::Any, borrow::BorrowMut, env};
+use sqlx::{sqlite::*, Row};
 use futures::executor::block_on;
 
 #[derive(Event)]
@@ -75,7 +75,7 @@ where
     }
 }
 
-#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Component)]
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Component, Debug)]
 pub struct DatabaseEntity {
     id: u32
 }
@@ -254,9 +254,11 @@ fn populate_db(db: ResMut<SqliteDatabaseResource>) {
         .execute(conn)).unwrap();
 }
 
-fn index_lookup(mut index: Index<DatabaseEntityIndex>) {
-    let entity = index.lookup(0);
-    println!("entity: {:?}", entity);
+fn index_lookup(mut index: Index<DatabaseEntityIndex>, mut query: Query<(&Age)>) {
+    let entity_set = index.lookup(&0);
+    let entity = *entity_set.iter().next().unwrap();
+    let val = query.get(entity).unwrap();
+    println!("entity: {:?}", val);
 }
 
 #[tokio::main]
@@ -278,8 +280,7 @@ async fn main() {
 
 
     // Create a new Schedule, which defines an execution strategy for Systems
-    let executor = Box::new(LazyLoadedExecutor::new());
-    let mut schedule = Schedule::new_with_executor(executor);
+    let mut schedule = Schedule::default();
 
     add_event::<PositionChanged>(&mut world);
 

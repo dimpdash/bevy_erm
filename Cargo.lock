@@ -175,7 +175,7 @@ dependencies = [
  "accesskit",
  "bevy_app",
  "bevy_derive",
- "bevy_ecs 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs",
 ]
 
 [[package]]
@@ -185,7 +185,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d41731817993f92e4363dd3335558e779e290bc71eefc0b5547052b85810907e"
 dependencies = [
  "bevy_derive",
- "bevy_ecs 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs",
  "bevy_reflect",
  "bevy_tasks",
  "bevy_utils",
@@ -201,7 +201,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3daa24502a14839509f02407bc7e48299fe84d260877de23b60662de0f4f4b6c"
 dependencies = [
  "bevy_app",
- "bevy_ecs 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs",
  "bevy_math",
  "bevy_reflect",
  "bevy_tasks",
@@ -228,36 +228,11 @@ checksum = "fa38ca5967d335cc1006a0e0f1a86c350e2f15fd1878449f61d04cd57a7c4060"
 dependencies = [
  "bevy_app",
  "bevy_core",
- "bevy_ecs 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs",
  "bevy_log",
  "bevy_time",
  "bevy_utils",
  "sysinfo",
-]
-
-[[package]]
-name = "bevy_ecs"
-version = "0.12.1"
-dependencies = [
- "anyhow",
- "async-channel",
- "bevy_ecs_macros",
- "bevy_mod_index",
- "bevy_ptr",
- "bevy_reflect",
- "bevy_tasks",
- "bevy_utils",
- "downcast-rs",
- "event-listener 2.5.3",
- "fixedbitset",
- "futures",
- "rand",
- "rustc-hash",
- "serde",
- "sqlx",
- "thiserror",
- "thread_local",
- "tokio",
 ]
 
 [[package]]
@@ -294,6 +269,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_erm"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "async-channel",
+ "bevy_ecs",
+ "bevy_ecs_macros",
+ "bevy_mod_index",
+ "bevy_ptr",
+ "bevy_reflect",
+ "bevy_tasks",
+ "bevy_utils",
+ "downcast-rs",
+ "event-listener 2.5.3",
+ "fixedbitset",
+ "futures",
+ "rand",
+ "rustc-hash",
+ "serde",
+ "sqlx",
+ "thiserror",
+ "thread_local",
+ "tokio",
+]
+
+[[package]]
 name = "bevy_hierarchy"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -301,7 +302,7 @@ checksum = "06bd477152ce2ae1430f5e0a4f19216e5785c22fee1ab23788b5982dc59d1a55"
 dependencies = [
  "bevy_app",
  "bevy_core",
- "bevy_ecs 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs",
  "bevy_log",
  "bevy_reflect",
  "bevy_utils",
@@ -315,7 +316,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cab9a599189b2a694c182d60cd52219dd9364f9892ff542d87799b8e45d9e6dc"
 dependencies = [
  "bevy_app",
- "bevy_ecs 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs",
  "bevy_math",
  "bevy_reflect",
  "bevy_utils",
@@ -333,7 +334,7 @@ dependencies = [
  "bevy_core",
  "bevy_derive",
  "bevy_diagnostic",
- "bevy_ecs 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs",
  "bevy_hierarchy",
  "bevy_input",
  "bevy_log",
@@ -355,7 +356,7 @@ checksum = "0dc10ba1d225a8477b9e80a1bf797d8a8b8274e83c9b24fb4d9351aec9229755"
 dependencies = [
  "android_log-sys",
  "bevy_app",
- "bevy_ecs 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs",
  "bevy_utils",
  "console_error_panic_hook",
  "tracing-log 0.1.4",
@@ -454,7 +455,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6250d76eed3077128b6a3d004f9f198b01107800b9824051e32bb658054e837"
 dependencies = [
  "bevy_app",
- "bevy_ecs 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs",
  "bevy_reflect",
  "bevy_utils",
  "crossbeam-channel",
@@ -468,7 +469,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d541e0c292edbd96afae816ee680e02247422423ccd5dc635c1e211a20ed64be"
 dependencies = [
  "bevy_app",
- "bevy_ecs 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs",
  "bevy_hierarchy",
  "bevy_math",
  "bevy_reflect",
@@ -512,7 +513,7 @@ checksum = "41ee72bf7f974000e9b31bb971a89387f1432ba9413f35c4fef59fef49767260"
 dependencies = [
  "bevy_a11y",
  "bevy_app",
- "bevy_ecs 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bevy_ecs",
  "bevy_input",
  "bevy_math",
  "bevy_reflect",
