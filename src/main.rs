@@ -69,6 +69,7 @@ pub trait DatabaseQueryInfo: Sized {
     type Component: Component + Reflect + Default;
 
     fn get_component(db_entity: &DatabaseEntity) -> Result<Self::Component, ()>;
+    fn write_component(db_entity: &DatabaseEntity, component: Self::Component) -> Result<(), ()>;
 }
 
 pub struct DatabaseQueryFetchState {}
@@ -81,12 +82,11 @@ pub struct DatabaseQuery<I:DatabaseQueryInfo> {
 
 impl<I:DatabaseQueryInfo> DatabaseQuery<I> {
     pub fn get(&mut self, db_entity : &DatabaseEntity) -> Result<I::Component, ()> {
-        // todo get from db
-        let age: u32 = 1;
-        let mut a = I::Component::default();
-        let mut a_reflected = a.reflect_mut();
-
         I::get_component(db_entity)
+    }
+
+    pub fn write(&mut self, db_entity : &DatabaseEntity, component: I::Component) -> Result<(), ()> {
+        I::write_component(db_entity, component)
     }
 }
 
@@ -131,6 +131,10 @@ impl DatabaseQueryInfo for AgeQuery {
     fn get_component(db_entity: &DatabaseEntity) -> Result<Age, ()> {
         Ok(Age {age: 5})
     }
+
+    fn write_component(db_entity: &DatabaseEntity, component: Age) -> Result<(), ()> {
+        Ok(())
+    }
 }
 
 fn lookup_db_query_system(mut db_query: DatabaseQuery<AgeQuery>) {
@@ -139,6 +143,17 @@ fn lookup_db_query_system(mut db_query: DatabaseQuery<AgeQuery>) {
     };
     let age = db_query.get(&db_entity).unwrap();
     println!("age: {:?}", age);
+}
+
+fn increment_age_system(mut db_query: DatabaseQuery<AgeQuery>) {
+    let db_entity = DatabaseEntity {
+        id: 0
+    };
+    let age = db_query.get(&db_entity).unwrap();
+    let new_age = Age {
+        age: age.age + 1
+    };
+    db_query.write(&db_entity, new_age).unwrap();
 }
 
 
@@ -177,6 +192,7 @@ fn main() {
 
     // Add our system to the schedule
     // schedule.add_systems(movement);
+    schedule.add_systems(increment_age_system.before(lookup_db_query_system));
     schedule.add_systems(lookup_db_query_system);
     // schedule.add_systems(movement_changes);
 

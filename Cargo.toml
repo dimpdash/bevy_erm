@@ -40,6 +40,9 @@ path = "examples/resources.rs"
 name = "change_detection"
 path = "examples/change_detection.rs"
 
+[dependencies]
+sqlx = "0.7.3"
+
 [dependencies.async-channel]
 version = "1.4"
 
