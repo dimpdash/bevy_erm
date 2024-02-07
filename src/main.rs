@@ -1,6 +1,6 @@
 use bevy_ecs::{component::Component, prelude::*, schedule::LazyLoadedExecutor, system::SystemParam};
 use bevy_reflect::{prelude::*};
-
+use bevy_mod_index::prelude::*;
 use bevy_utils::petgraph::visit::Data;
 use sqlx::{pool::PoolConnection, sqlite::*, Connection, Database, Row};
 use std::{any::Any, borrow::BorrowMut, env};
@@ -14,6 +14,20 @@ struct PositionChanged{ entity: Entity, position: Position}
 struct Position { x: f32, y: f32 }
 #[derive(Component)]
 struct Velocity { x: f32, y: f32 }
+
+struct DatabaseEntityIndex;
+impl IndexInfo for DatabaseEntityIndex {
+    type Component = DatabaseEntity;
+
+    type Value = u32;
+
+    type Storage = NoStorage<Self>;
+
+
+    fn value(c: &Self::Component) -> Self::Value {
+        c.id
+    }
+}
 
 // This system moves each entity with a Position and Velocity component
 fn movement(mut query: Query<(&mut Position, &Velocity)>) {
@@ -102,7 +116,7 @@ impl<'w, I:DatabaseQueryInfo> DatabaseQuery<'w, I> {
         unsafe { 
             let w = self.world.world_mut(); 
 
-            
+
             w.spawn((
                 DatabaseEntity {id : db_entity.id},
                 Age{ age : 15}
@@ -240,6 +254,11 @@ fn populate_db(db: ResMut<SqliteDatabaseResource>) {
         .execute(conn)).unwrap();
 }
 
+fn index_lookup(mut index: Index<DatabaseEntityIndex>) {
+    let entity = index.lookup(0);
+    println!("entity: {:?}", entity);
+}
+
 #[tokio::main]
 async fn main() {
     // Create a new empty World to hold our Entities and Components
@@ -293,22 +312,10 @@ async fn main() {
 
     schedule.add_systems(increment_age_system.before(lookup_db_query_system));
     schedule.add_systems(lookup_db_query_system);
+    schedule.add_systems(index_lookup.after(increment_age_system));
     // schedule.add_systems(movement_changes);
 
     // Run the schedule once. If your app has a "loop", you would run this once per loop
     schedule.run(&mut world);
-
-       let comps = world.components();
-
-    println!("len: {:?}", comps.len());
-
-    let age = Age {
-        age: 15
-    };
-
-    // let type_id = age.type_id();
-    let comp_id = comps.component_id::<Age>().unwrap();
-    let name = comps.get_name(comp_id).unwrap();
-    println!("name: {:?}", name);
 
 }
