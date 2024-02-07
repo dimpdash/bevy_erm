@@ -5,6 +5,7 @@ use bevy_reflect::prelude::*;
 use bevy_mod_index::prelude::*;
 use sqlx::{sqlite::*, Row};
 use futures::executor::block_on;
+use bevy_mod_index::index::IndexFetchState;
 
 #[derive(Event)]
 struct PositionChanged{ entity: Entity, position: Position}
@@ -21,7 +22,7 @@ impl IndexInfo for DatabaseEntityIndex {
 
     type Value = u32;
 
-    type Storage = NoStorage<Self>;
+    type Storage = HashmapStorage<Self>;
 
 
     fn value(c: &Self::Component) -> Self::Value {
@@ -90,6 +91,7 @@ type Pool<DbR> = sqlx::Pool<<DbR as DatabaseResource>::Database>;
 pub trait DatabaseQueryInfo: Sized {
     type Component: Component + Reflect + Default;
     type Database: DatabaseResource;
+    type Index: IndexInfo;
 
     fn get_component(conn: &Pool<Self::Database>, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>;
     fn write_component(db_entity: &DatabaseEntity, component: Self::Component) -> Result<(), ()>;
@@ -98,33 +100,55 @@ pub trait DatabaseQueryInfo: Sized {
 pub struct DatabaseQueryFetchState<'w, 's, I: DatabaseQueryInfo + 'static> {
     db_state: <ResMut<'w, I::Database> as SystemParam>::State,
     phantom: std::marker::PhantomData<&'s ()>,
+    index_state: IndexFetchState<'static, 'static, DatabaseEntityIndex>,
 }
 
-pub struct DatabaseQuery<'w, I:DatabaseQueryInfo + 'static> {
+pub struct DatabaseQuery<'w, 's, I:DatabaseQueryInfo + 'static> {
     db: ResMut<'w, I::Database>,
-    world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>
+    world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>,
+    index: Index<'w, 's, DatabaseEntityIndex>,
 }
 
 // pub type RODatabaseQueryItem<'a, I> = &'a I::Component;
 
-impl<'w, I:DatabaseQueryInfo> DatabaseQuery<'w, I> {
-    pub fn get(&mut self, db_entity : &DatabaseEntity) -> Result<I::Component, ()> {
+impl<'w, 's, I:DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
+    pub fn get(&mut self, db_entity : &DatabaseEntity) -> Result<&I::Component, ()> {
         let conn = self.db.get_connection();
+        // using the database entity index
+        // fetch from resource
 
-        let comp = I::get_component(conn, db_entity);
-
-        unsafe { 
-            let w = self.world.world_mut(); 
-
-
-            w.spawn((
-                DatabaseEntity {id : db_entity.id},
-                Age{ age : 15}
-            ));
+        let entity_set = self.index.lookup(&db_entity.id);
+        match entity_set.iter().next() {
+            // Entity has been read into memory before
+            Some(entity) => {
+                match unsafe {self.world.world_mut().get::<I::Component>(*entity)} {
+                    // Entity also already has the desired component
+                    Some(component) => Ok(component),
+                    // Entity does not have the desired component (Load from database)
+                    None => {
+                        let db_component = I::get_component(conn, db_entity).unwrap();
+                        // write the component to the entity
+                        unsafe {
+                            let w = self.world.world_mut();
+                            w.entity_mut(*entity).insert(db_component);
+                            // Grab the refernce to the component. Can unwrap as just inserted
+                            let component = w.get::<I::Component>(*entity).unwrap();
+                            Ok(component)
+                        }
+                    }
+                    }
+                },  
+            // Entity not found in world
+            None => {
+                let component = I::get_component(conn, db_entity).unwrap();
+                unsafe {
+                    let w = self.world.world_mut();
+                    let entity = w.spawn((DatabaseEntity{id: db_entity.id}, component)).id();
+                    let component = w.get::<I::Component>(entity).unwrap();
+                    Ok(component)
+                }
+            }
         }
-
-
-        comp
     }
 
     pub fn write(&mut self, db_entity : &DatabaseEntity, component: I::Component) -> Result<(), ()> {
@@ -132,12 +156,12 @@ impl<'w, I:DatabaseQueryInfo> DatabaseQuery<'w, I> {
     }
 }
 
-unsafe impl<'w, I:DatabaseQueryInfo> SystemParam for DatabaseQuery<'w, I>
+unsafe impl<'w, 's, I:DatabaseQueryInfo> SystemParam for DatabaseQuery<'w, 's, I>
     where I: DatabaseQueryInfo + 'static
 {
     type State = DatabaseQueryFetchState<'static, 'static, I>;
 
-    type Item<'_w, '_s> = DatabaseQuery<'_w, I>;
+    type Item<'_w, '_s> = DatabaseQuery<'_w, '_s, I>;
 
     fn init_state(world: &mut World, system_meta: &mut bevy_ecs::system::SystemMeta) -> Self::State {
         // https://github.com/chrisjuchem/bevy_mod_index/blob/15e9b4c9bbf26d4fc087ce056b07d1312464de2f/src/index.rs#L108
@@ -145,10 +169,13 @@ unsafe impl<'w, I:DatabaseQueryInfo> SystemParam for DatabaseQuery<'w, I>
             world.init_resource::<SqliteDatabaseResource>();
         }
 
+        let index_state = <Index<DatabaseEntityIndex> as SystemParam>::init_state(world, system_meta);
+
 
         DatabaseQueryFetchState {
             db_state: <ResMut<'w, I::Database>>::init_state(world, system_meta),
             phantom: std::marker::PhantomData,
+            index_state: index_state,
         }
     }
 
@@ -159,13 +186,15 @@ unsafe impl<'w, I:DatabaseQueryInfo> SystemParam for DatabaseQuery<'w, I>
         change_tick: bevy_ecs::component::Tick,
     ) -> Self::Item<'w2, 's2> 
     {
+
         let db_query = DatabaseQuery {
             db: <ResMut<'w2, I::Database>>::get_param(
                 &mut state.db_state,
                 system_meta,
                 world,
                 change_tick),
-            world: world
+            world: world,
+            index: <Index<DatabaseEntityIndex> as SystemParam>::get_param(&mut state.index_state, system_meta, world, change_tick),
         
         };
 
@@ -182,6 +211,8 @@ struct AgeQuery {}
 impl DatabaseQueryInfo for AgeQuery {
     type Component = Age;
     type Database = SqliteDatabaseResource;
+    type Index = DatabaseEntityIndex;
+
 
     fn get_component(conn: &sqlx::Pool<<Self::Database as DatabaseResource>::Database>, db_entity: &DatabaseEntity) -> Result<Age, ()> {
         let age = block_on(sqlx::query("SELECT age FROM person WHERE id = ?").bind(db_entity.id).fetch_one(conn)).unwrap();
@@ -192,6 +223,7 @@ impl DatabaseQueryInfo for AgeQuery {
     fn write_component(_db_entity: &DatabaseEntity, _component: Age) -> Result<(), ()> {
         Ok(())
     }
+
 
 }
 
@@ -272,6 +304,10 @@ async fn main() {
         Velocity { x: 1.0, y: 0.0 },
     ));
 
+    world.spawn((
+        DatabaseEntity {id: 1},
+    ));
+
     world.init_component::<Age>();
 
     if !world.contains_resource::<SqliteDatabaseResource>() {
@@ -313,7 +349,7 @@ async fn main() {
 
     schedule.add_systems(increment_age_system.before(lookup_db_query_system));
     schedule.add_systems(lookup_db_query_system);
-    schedule.add_systems(index_lookup.after(increment_age_system));
+    // schedule.add_systems(index_lookup.after(increment_age_system));
     // schedule.add_systems(movement_changes);
 
     // Run the schedule once. If your app has a "loop", you would run this once per loop

@@ -13,7 +13,7 @@
 				"kind": "build",
 				"isDefault": true
 			},
-			"label": "bevy_ecs",		
+			"label": "bevy_erm",		
 		}
 	]
 }
