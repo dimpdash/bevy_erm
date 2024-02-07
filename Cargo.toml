@@ -41,7 +41,10 @@ name = "change_detection"
 path = "examples/change_detection.rs"
 
 [dependencies]
-sqlx = "0.7.3"
+anyhow = "1.0.79"
+futures = "0.3.30"
+sqlx = { version = "0.7.3", features = ["sqlite"] }
+tokio = { version = "1.36.0", features = ["full"] }
 
 [dependencies.async-channel]
 version = "1.4"

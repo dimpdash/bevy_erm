@@ -1,14 +1,18 @@
-use bevy_ecs::{prelude::*, schedule::LazyLoadedExecutor, system::SystemParam, component::Component};
+use bevy_ecs::{component::Component, prelude::*, schedule::LazyLoadedExecutor, system::SystemParam, world};
 use bevy_reflect::{prelude::*, DynamicStruct};
+
+use sqlx::{sqlite::*, Connection};
+
+use futures::executor::block_on;
+
+#[derive(Event)]
+struct PositionChanged{ entity: Entity, position: Position}
+
 
 #[derive(Component)]
 struct Position { x: f32, y: f32 }
 #[derive(Component)]
 struct Velocity { x: f32, y: f32 }
-
-#[derive(Event)]
-struct PositionChanged{ entity: Entity, position: Position}
-
 
 // This system moves each entity with a Position and Velocity component
 fn movement(mut query: Query<(&mut Position, &Velocity)>) {
@@ -67,20 +71,24 @@ pub struct DatabaseEntities {
 
 pub trait DatabaseQueryInfo: Sized {
     type Component: Component + Reflect + Default;
+    type Database: DatabaseResource;
 
     fn get_component(db_entity: &DatabaseEntity) -> Result<Self::Component, ()>;
     fn write_component(db_entity: &DatabaseEntity, component: Self::Component) -> Result<(), ()>;
 }
 
-pub struct DatabaseQueryFetchState {}
+pub struct DatabaseQueryFetchState<'w, 's, I: DatabaseQueryInfo + 'static> {
+    db_state: <ResMut<'w, I::Database> as SystemParam>::State,
+    phantom: std::marker::PhantomData<&'s ()>
+}
 
-pub struct DatabaseQuery<I:DatabaseQueryInfo> {
-    phantom: std::marker::PhantomData<I>
+pub struct DatabaseQuery<'w, I:DatabaseQueryInfo + 'static> {
+    db: ResMut<'w, I::Database>
 }
 
 // pub type RODatabaseQueryItem<'a, I> = &'a I::Component;
 
-impl<I:DatabaseQueryInfo> DatabaseQuery<I> {
+impl<'w, I:DatabaseQueryInfo> DatabaseQuery<'w, I> {
     pub fn get(&mut self, db_entity : &DatabaseEntity) -> Result<I::Component, ()> {
         I::get_component(db_entity)
     }
@@ -90,30 +98,39 @@ impl<I:DatabaseQueryInfo> DatabaseQuery<I> {
     }
 }
 
-unsafe impl<I:DatabaseQueryInfo> SystemParam for DatabaseQuery<I> {
-    type State = DatabaseQueryFetchState;
+unsafe impl<'w, I:DatabaseQueryInfo> SystemParam for DatabaseQuery<'w, I>
+    where I: DatabaseQueryInfo + 'static
+{
+    type State = DatabaseQueryFetchState<'static, 'static, I>;
 
-    type Item<'world, 'state> = DatabaseQuery<I>;
+    type Item<'_w, '_s> = DatabaseQuery<'_w, I>;
 
     fn init_state(world: &mut World, system_meta: &mut bevy_ecs::system::SystemMeta) -> Self::State {
-        //todo add cache ability by implementing storage
-        // for now just keep refetching data
-        // this is non-opitional as refectching existing data  thats changed locally would causes inconsistencies
-        // use as example
         // https://github.com/chrisjuchem/bevy_mod_index/blob/15e9b4c9bbf26d4fc087ce056b07d1312464de2f/src/index.rs#L108
+        if !world.contains_resource::<SqliteDatabaseResource>() {
+            world.init_resource::<SqliteDatabaseResource>();
+        }
 
-        // todo connect to db
-
-        DatabaseQueryFetchState {}
+        DatabaseQueryFetchState {
+            db_state: <ResMut<'w, I::Database>>::init_state(world, system_meta),
+            phantom: std::marker::PhantomData
+        }
     }
 
-    unsafe fn get_param<'world, 'state>(
-        state: &'state mut Self::State,
+    unsafe fn get_param<'w2, 's2>(
+        state: &'s2 mut Self::State,
         system_meta: &bevy_ecs::system::SystemMeta,
-        world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'world>,
+        world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w2>,
         change_tick: bevy_ecs::component::Tick,
-    ) -> Self::Item<'world, 'state> {
-        let db_query = DatabaseQuery {phantom: std::marker::PhantomData};
+    ) -> Self::Item<'w2, 's2> 
+    {
+        let db_query = DatabaseQuery {
+            db: <ResMut<'w2, I::Database>>::get_param(
+                &mut state.db_state,
+                system_meta,
+                world,
+                change_tick,
+        )};
 
         db_query
     }
@@ -127,14 +144,18 @@ struct Age {
 struct AgeQuery {}
 impl DatabaseQueryInfo for AgeQuery {
     type Component = Age;
+    type Database = SqliteDatabaseResource;
 
     fn get_component(db_entity: &DatabaseEntity) -> Result<Age, ()> {
+        
+        
         Ok(Age {age: 5})
     }
 
     fn write_component(db_entity: &DatabaseEntity, component: Age) -> Result<(), ()> {
         Ok(())
     }
+
 }
 
 fn lookup_db_query_system(mut db_query: DatabaseQuery<AgeQuery>) {
@@ -156,8 +177,28 @@ fn increment_age_system(mut db_query: DatabaseQuery<AgeQuery>) {
     db_query.write(&db_entity, new_age).unwrap();
 }
 
+pub trait DatabaseResource: Resource + Default {
 
-fn main() {
+}
+
+#[derive(Resource)]
+pub struct SqliteDatabaseResource {
+    conn: SqlitePool
+}
+
+impl Default for SqliteDatabaseResource {
+    fn default() -> Self {
+        let conn = block_on(SqlitePool::connect("sqlite::memory:")).unwrap();
+        SqliteDatabaseResource {
+            conn: conn
+        }
+    }
+}
+
+impl DatabaseResource for SqliteDatabaseResource {}
+
+#[tokio::main]
+async fn main() {
     // Create a new empty World to hold our Entities and Components
     let mut world = World::new();
 
@@ -167,6 +208,15 @@ fn main() {
         Velocity { x: 1.0, y: 0.0 },
     ));
 
+    let conn = SqlitePool::connect("sqlite::memory:").await.unwrap();
+
+    sqlx::query("CREATE TABLE person (id INTEGER PRIMARY KEY, age INTEGER)")
+        .execute(&conn)
+        .await.unwrap();
+
+    if !world.contains_resource::<SqliteDatabaseResource>() {
+        world.init_resource::<SqliteDatabaseResource>();
+    }
 
     // Create a new Schedule, which defines an execution strategy for Systems
     let executor = Box::new(LazyLoadedExecutor::new());
