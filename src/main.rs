@@ -1,6 +1,7 @@
 use bevy_ecs::{component::Component, prelude::*, schedule::LazyLoadedExecutor, system::SystemParam};
 use bevy_reflect::{prelude::*};
 
+use bevy_utils::petgraph::visit::Data;
 use sqlx::{pool::PoolConnection, sqlite::*, Connection, Database, Row};
 use std::env;
 use futures::executor::block_on;
@@ -69,12 +70,14 @@ pub struct DatabaseEntities {
     db_entities: Vec<DatabaseEntity>
 }
 
+// stop type warning
+type Pool<DbR> = sqlx::Pool<<DbR as DatabaseResource>::Database>;
+
 pub trait DatabaseQueryInfo: Sized {
     type Component: Component + Reflect + Default;
     type Database: DatabaseResource;
 
-    fn get_component<Db> (conn: &PoolConnection<Db>, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
-        where Db: Database;
+    fn get_component(conn: &Pool<Self::Database>, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>;
     fn write_component(db_entity: &DatabaseEntity, component: Self::Component) -> Result<(), ()>;
 }
 
@@ -93,7 +96,7 @@ impl<'w, I:DatabaseQueryInfo> DatabaseQuery<'w, I> {
     pub fn get(&mut self, db_entity : &DatabaseEntity) -> Result<I::Component, ()> {
         let conn = self.db.get_connection();
 
-        I::get_component(&conn, db_entity)
+        I::get_component(conn, db_entity)
     }
 
     pub fn write(&mut self, db_entity : &DatabaseEntity, component: I::Component) -> Result<(), ()> {
@@ -149,13 +152,8 @@ impl DatabaseQueryInfo for AgeQuery {
     type Component = Age;
     type Database = SqliteDatabaseResource;
 
-    fn get_component<DB>(_conn: &PoolConnection<DB>, db_entity: &DatabaseEntity) -> Result<Age, ()> 
-        where DB: Database 
-    {
-        let conn = block_on(SqlitePool::connect(&env::var("DATABASE_URL").unwrap())).unwrap();
-
-
-        let age = block_on(sqlx::query("SELECT age FROM person WHERE id = ?").bind(db_entity.id).fetch_one(&conn)).unwrap();
+    fn get_component(conn: &sqlx::Pool<<Self::Database as DatabaseResource>::Database>, db_entity: &DatabaseEntity) -> Result<Age, ()> {
+        let age = block_on(sqlx::query("SELECT age FROM person WHERE id = ?").bind(db_entity.id).fetch_one(conn)).unwrap();
         let age = age.get(0);
         Ok(Age {age: age})
     }
@@ -187,7 +185,7 @@ fn increment_age_system(mut db_query: DatabaseQuery<AgeQuery>) {
 
 pub trait DatabaseResource: Resource + Default {
     type Database: sqlx::Database;
-    fn get_connection(&self) -> PoolConnection<Self::Database>;
+    fn get_connection(&self) -> &sqlx::Pool<Self::Database>;
 }
 
 #[derive(Resource)]
@@ -195,22 +193,12 @@ pub struct SqliteDatabaseResource {
     pool: SqlitePool
 }
 
-async fn setup() -> SqlitePool {
-    let pool: SqlitePool = SqlitePool::connect("sqlite::memory:").await.unwrap();
-    let _f = sqlx::query("CREATE TABLE person (id INTEGER PRIMARY KEY, age INTEGER)")
-        .execute(&pool)
-        .await
-        .unwrap();
-
-    pool
-}
-
 impl Default for SqliteDatabaseResource {
     fn default() -> Self {
         let pool= block_on(SqlitePool::connect("sqlite::memory:")).unwrap();
         block_on(sqlx::query("CREATE TABLE person (id INTEGER PRIMARY KEY, age INTEGER)")
             .execute(&pool)).unwrap();
-        block_on(sqlx::query("INSERT INTO person (id, age) VALUES (?)")
+        block_on(sqlx::query("INSERT INTO person (id, age) VALUES (?, ?)")
             .bind(0)
             .bind(10)
             .execute(&pool)).unwrap();
@@ -223,9 +211,9 @@ impl Default for SqliteDatabaseResource {
 
 impl DatabaseResource for SqliteDatabaseResource {
     type Database = Sqlite;
-    fn get_connection(&self) -> PoolConnection<Self::Database> {
+    fn get_connection(&self) -> &sqlx::Pool<Self::Database> {
         let conn = block_on(self.pool.acquire()).unwrap();
-        conn
+        &self.pool
     }
 
 }
