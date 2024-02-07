@@ -3,7 +3,7 @@ use bevy_reflect::{prelude::*};
 
 use bevy_utils::petgraph::visit::Data;
 use sqlx::{pool::PoolConnection, sqlite::*, Connection, Database, Row};
-use std::env;
+use std::{any::Any, borrow::BorrowMut, env};
 use futures::executor::block_on;
 
 #[derive(Event)]
@@ -61,7 +61,7 @@ where
     }
 }
 
-#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Component)]
 pub struct DatabaseEntity {
     id: u32
 }
@@ -83,11 +83,12 @@ pub trait DatabaseQueryInfo: Sized {
 
 pub struct DatabaseQueryFetchState<'w, 's, I: DatabaseQueryInfo + 'static> {
     db_state: <ResMut<'w, I::Database> as SystemParam>::State,
-    phantom: std::marker::PhantomData<&'s ()>
+    phantom: std::marker::PhantomData<&'s ()>,
 }
 
 pub struct DatabaseQuery<'w, I:DatabaseQueryInfo + 'static> {
-    db: ResMut<'w, I::Database>
+    db: ResMut<'w, I::Database>,
+    world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>
 }
 
 // pub type RODatabaseQueryItem<'a, I> = &'a I::Component;
@@ -96,7 +97,20 @@ impl<'w, I:DatabaseQueryInfo> DatabaseQuery<'w, I> {
     pub fn get(&mut self, db_entity : &DatabaseEntity) -> Result<I::Component, ()> {
         let conn = self.db.get_connection();
 
-        I::get_component(conn, db_entity)
+        let comp = I::get_component(conn, db_entity);
+
+        unsafe { 
+            let w = self.world.world_mut(); 
+
+            
+            w.spawn((
+                DatabaseEntity {id : db_entity.id},
+                Age{ age : 15}
+            ));
+        }
+
+
+        comp
     }
 
     pub fn write(&mut self, db_entity : &DatabaseEntity, component: I::Component) -> Result<(), ()> {
@@ -117,9 +131,10 @@ unsafe impl<'w, I:DatabaseQueryInfo> SystemParam for DatabaseQuery<'w, I>
             world.init_resource::<SqliteDatabaseResource>();
         }
 
+
         DatabaseQueryFetchState {
             db_state: <ResMut<'w, I::Database>>::init_state(world, system_meta),
-            phantom: std::marker::PhantomData
+            phantom: std::marker::PhantomData,
         }
     }
 
@@ -135,8 +150,10 @@ unsafe impl<'w, I:DatabaseQueryInfo> SystemParam for DatabaseQuery<'w, I>
                 &mut state.db_state,
                 system_meta,
                 world,
-                change_tick,
-        )};
+                change_tick),
+            world: world
+        
+        };
 
         db_query
     }
@@ -180,6 +197,7 @@ fn increment_age_system(mut db_query: DatabaseQuery<AgeQuery>) {
     let new_age = Age {
         age: age.age + 1
     };
+
     db_query.write(&db_entity, new_age).unwrap();
 }
 
@@ -233,6 +251,8 @@ async fn main() {
         Velocity { x: 1.0, y: 0.0 },
     ));
 
+    world.init_component::<Age>();
+
     if !world.contains_resource::<SqliteDatabaseResource>() {
         world.init_resource::<SqliteDatabaseResource>();
     }
@@ -260,6 +280,11 @@ async fn main() {
         });
     }
 
+ 
+
+    // want to find out for a particular component what its component id is 
+
+
     // Add our system to the schedule
     // schedule.add_systems(movement);
     let mut startup_schedule = Schedule::default();
@@ -272,5 +297,18 @@ async fn main() {
 
     // Run the schedule once. If your app has a "loop", you would run this once per loop
     schedule.run(&mut world);
+
+       let comps = world.components();
+
+    println!("len: {:?}", comps.len());
+
+    let age = Age {
+        age: 15
+    };
+
+    // let type_id = age.type_id();
+    let comp_id = comps.component_id::<Age>().unwrap();
+    let name = comps.get_name(comp_id).unwrap();
+    println!("name: {:?}", name);
 
 }
