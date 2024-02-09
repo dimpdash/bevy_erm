@@ -1,17 +1,18 @@
-use std::ops::Deref;
+use std::{any::TypeId, ops::Deref};
 
 use bevy_ecs::{component::Component, prelude::*, system::SystemParam};
 use bevy_reflect::prelude::*;
 use bevy_mod_index::prelude::*;
-use sqlx::{sqlite::*, Row};
-use futures::executor::block_on;
+use sqlx::{database::HasArguments, sqlite::*, Row, Transaction};
+use futures::{executor::block_on, Future, StreamExt};
 use bevy_mod_index::index::IndexFetchState;
+use async_trait::async_trait;
 
-#[derive(Event)]
+#[derive(Event, Debug)]
 struct PositionChanged{ entity: Entity, position: Position}
 
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 struct Position { x: f32, y: f32 }
 #[derive(Component)]
 struct Velocity { x: f32, y: f32 }
@@ -55,9 +56,7 @@ fn gen_move_updates(mut query: Query<(Entity, &Position, &Velocity)>, mut events
 fn movement_changes(mut query: Query<&mut Position>, mut events: EventReader<PositionChanged>) {
     println!("movement_changes");
     for event in events.read() {
-        let mut pos = query.get_mut(event.entity).unwrap();
-        pos.x = event.position.x;
-        pos.y = event.position.y;
+        println!("event: {:?}", event);
     }
 }
 
@@ -88,13 +87,18 @@ pub struct DatabaseEntities {
 // stop type warning
 type Pool<DbR> = sqlx::Pool<<DbR as DatabaseResource>::Database>;
 
+type SqlxQueryAlias<'a, 'b, DBR> = sqlx::query::Query<'a, <DBR as DatabaseResource>::Database, <<DBR as DatabaseResource>::Database as HasArguments<'b>>::Arguments>;
+
+#[async_trait]
 pub trait DatabaseQueryInfo: Sized {
     type Component: Component + Reflect + Default;
     type Database: DatabaseResource;
     type Index: IndexInfo;
 
     fn get_component(conn: &Pool<Self::Database>, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>;
-    fn write_component(db_entity: &DatabaseEntity, component: Self::Component) -> Result<(), ()>;
+    async fn write_component<'c, E>(tr : E, db_entity: &DatabaseEntity, component: &Self::Component) -> Result<(), ()> 
+    where
+        E: sqlx::Executor<'c, Database = <Self::Database as DatabaseResource>::Database>,;
 }
 
 pub struct DatabaseQueryFetchState<'w, 's, I: DatabaseQueryInfo + 'static> {
@@ -151,8 +155,13 @@ impl<'w, 's, I:DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
         }
     }
 
-    pub fn write(&mut self, db_entity : &DatabaseEntity, component: I::Component) -> Result<(), ()> {
-        I::write_component(db_entity, component)
+    pub async fn write<'c, E>(&self, tr : E, db_entity : &DatabaseEntity, component: &I::Component) -> Result<(), ()> 
+    where 
+        E: sqlx::Executor<'c, Database = <I::Database as DatabaseResource>::Database>
+    {
+        I::write_component(tr, db_entity, component).await;
+
+        Ok(())
     }
 }
 
@@ -202,26 +211,38 @@ unsafe impl<'w, 's, I:DatabaseQueryInfo> SystemParam for DatabaseQuery<'w, 's, I
     }
 }
 
-#[derive(Component, Reflect, Debug, Default)]
+#[derive(Component, Reflect, Debug, Default, Clone, sqlx::FromRow)]
 struct Age {
     age: u32
 }
 
+
 struct AgeQuery {}
+#[async_trait]
 impl DatabaseQueryInfo for AgeQuery {
     type Component = Age;
     type Database = SqliteDatabaseResource;
     type Index = DatabaseEntityIndex;
 
 
-    fn get_component(conn: &sqlx::Pool<<Self::Database as DatabaseResource>::Database>, db_entity: &DatabaseEntity) -> Result<Age, ()> {
+    fn get_component(conn: &Pool<Self::Database>, db_entity: &DatabaseEntity) -> Result<Age, ()> {
         let age = block_on(sqlx::query("SELECT age FROM person WHERE id = ?").bind(db_entity.id).fetch_one(conn)).unwrap();
         let age = age.get(0);
         Ok(Age {age: age})
     }
 
-    fn write_component(_db_entity: &DatabaseEntity, _component: Age) -> Result<(), ()> {
-        Ok(())
+    async fn write_component<'c, E>(tr: E, db_entity: &DatabaseEntity, component: &Self::Component) -> Result<(), ()>
+    where
+        E: sqlx::Executor<'c, Database = <Self::Database as DatabaseResource>::Database>,
+    {
+        let r = sqlx::query("UPDATE person SET age = ? WHERE id = ?")
+            .bind(component.age)
+            .bind(db_entity.id)
+            .execute(tr).await;
+        match r {
+            Ok(_) => Ok(()),
+            Err(_) => Err(()),
+        }
     }
 
 
@@ -244,7 +265,6 @@ fn increment_age_system(mut db_query: DatabaseQuery<AgeQuery>) {
         age: age.age + 1
     };
 
-    db_query.write(&db_entity, new_age).unwrap();
 }
 
 pub trait DatabaseResource: Resource + Default {
@@ -270,7 +290,6 @@ impl Default for SqliteDatabaseResource {
 impl DatabaseResource for SqliteDatabaseResource {
     type Database = Sqlite;
     fn get_connection(&self) -> &sqlx::Pool<Self::Database> {
-        let conn = block_on(self.pool.acquire()).unwrap();
         &self.pool
     }
 
@@ -292,6 +311,55 @@ fn index_lookup(mut index: Index<DatabaseEntityIndex>, mut query: Query<(&Age)>)
     let val = query.get(entity).unwrap();
     println!("entity: {:?}", val);
 }
+
+fn events_ended(mut events: EventReader<PositionChanged>) {
+    events.is_empty();
+
+}
+
+fn clear_events(mut events: EventReader<PositionChanged>) {
+    println!("clearing events");
+    events.clear();
+}
+
+fn do_nothing() {
+    println!("do nothing");
+}
+
+fn flush_to_db(query: Query<(Entity, &DatabaseEntity, Option<&Age>), With<DatabaseEntity>>, db_query : DatabaseQuery<AgeQuery>) {
+    block_on(async {
+        println!("flushing to db");
+
+        let mut transaction = db_query.db.get_connection().begin().await.unwrap();
+
+        println!("transaction started");
+        for (_, db_entity, age) in query.iter() {
+            if let Some(age) = age {
+                db_query.write(&mut *transaction, &DatabaseEntity{id: db_entity.id}, &age).await.unwrap();
+            }
+        }
+
+        transaction.commit().await.unwrap();
+
+
+    });
+
+    println!("flushed to db");
+
+    block_on(async {
+      // read the age database table
+      let age = sqlx::query_as::<_, Age>("SELECT age FROM person").bind(0).fetch(db_query.db.get_connection());
+      age.for_each(|age| async {
+          println!("age: {:?}", age.unwrap());
+      }).await;
+      
+    });
+
+
+}
+
+#[derive(Event)]
+struct TestEvent;
 
 #[tokio::main]
 async fn main() {
@@ -318,7 +386,10 @@ async fn main() {
     // Create a new Schedule, which defines an execution strategy for Systems
     let mut schedule = Schedule::default();
 
+    // add the events
+    let mut clear_events_schedule = Schedule::default();
     add_event::<PositionChanged>(&mut world);
+    clear_events_schedule.add_systems(bevy_ecs::event::event_update_system::<PositionChanged>);
 
     let mut query = world.query::<Entity>();
 
@@ -347,12 +418,44 @@ async fn main() {
     startup_schedule.add_systems(populate_db.before(increment_age_system));
     startup_schedule.run(&mut world);
 
-    schedule.add_systems(increment_age_system.before(lookup_db_query_system));
+    // schedule.add_systems(increment_age_system.before(lookup_db_query_system));
     schedule.add_systems(lookup_db_query_system);
     // schedule.add_systems(index_lookup.after(increment_age_system));
-    // schedule.add_systems(movement_changes);
+    schedule.add_systems(movement_changes);
+    // schedule.add_systems(do_nothing);
 
-    // Run the schedule once. If your app has a "loop", you would run this once per loop
-    schedule.run(&mut world);
+
+    let mut reader = IntoSystem::into_system(|mut events: EventReader<PositionChanged>| -> bool {
+        println!("event count {}", events.len());
+        !events.is_empty()
+    });
+
+    reader.initialize(&mut world);
+
+    let mut still_events_to_read = |  world : &mut World | -> bool {reader.run((), world)};
+
+
+
+
+    let mut count = 0;
+    const MAX_COUNT : u32 = 3;
+
+    // loop until all events are empty
+    while still_events_to_read(&mut world) && count < MAX_COUNT {
+        println!("running");
+        schedule.run(&mut world);
+        println!("ran");
+
+        // clear all the events as they should have been read by all the systems
+        clear_events_schedule.run(&mut world);
+        count += 1;
+    }   
+
+    let mut flush_to_db_schedule = Schedule::default();
+    flush_to_db_schedule.add_systems(flush_to_db);
+    flush_to_db_schedule.run(&mut world);
+
+
+    println!("done"); 
 
 }
