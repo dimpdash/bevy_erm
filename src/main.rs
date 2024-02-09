@@ -23,7 +23,7 @@ impl IndexInfo for DatabaseEntityIndex {
 
     type Value = u32;
 
-    type Storage = HashmapStorage<Self>;
+    type Storage = NoStorage<Self>;
 
 
     fn value(c: &Self::Component) -> Self::Value {
@@ -116,18 +116,20 @@ pub struct DatabaseQuery<'w, 's, I:DatabaseQueryInfo + 'static> {
 // pub type RODatabaseQueryItem<'a, I> = &'a I::Component;
 
 impl<'w, 's, I:DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
-    pub fn get(&mut self, db_entity : &DatabaseEntity) -> Result<&I::Component, ()> {
+    fn insert_component(&mut self, db_entity : &DatabaseEntity) -> Entity {
         let conn = self.db.get_connection();
         // using the database entity index
         // fetch from resource
 
+        self.index.refresh();
         let entity_set = self.index.lookup(&db_entity.id);
+        self.index.refresh();
         match entity_set.iter().next() {
             // Entity has been read into memory before
             Some(entity) => {
                 match unsafe {self.world.world_mut().get::<I::Component>(*entity)} {
                     // Entity also already has the desired component
-                    Some(component) => Ok(component),
+                    Some(_) => return *entity,
                     // Entity does not have the desired component (Load from database)
                     None => {
                         let db_component = I::get_component(conn, db_entity).unwrap();
@@ -135,23 +137,41 @@ impl<'w, 's, I:DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
                         unsafe {
                             let w = self.world.world_mut();
                             w.entity_mut(*entity).insert(db_component);
-                            // Grab the refernce to the component. Can unwrap as just inserted
-                            let component = w.get::<I::Component>(*entity).unwrap();
-                            Ok(component)
+                            return *entity
                         }
                     }
                     }
                 },  
             // Entity not found in world
             None => {
+                println!("entity not found in world for db_entity: {:?}", db_entity);
                 let component = I::get_component(conn, db_entity).unwrap();
                 unsafe {
                     let w = self.world.world_mut();
                     let entity = w.spawn((DatabaseEntity{id: db_entity.id}, component)).id();
-                    let component = w.get::<I::Component>(entity).unwrap();
-                    Ok(component)
+                    entity
                 }
             }
+        }
+    }
+
+    pub fn get(&mut self, db_entity : &DatabaseEntity) -> Result<&I::Component, ()> {
+        println!("getting component");
+        let entity = self.insert_component(db_entity);
+
+        unsafe {
+            Ok(
+                self.world.world().get::<I::Component>(entity).unwrap()
+            )
+        }
+    }
+
+    pub fn get_mut(&mut self, db_entity : &DatabaseEntity) -> Result<Mut<I::Component>, ()> {
+        println!("getting mut component");
+        let entity = self.insert_component(db_entity);
+
+        unsafe {
+            Ok(self.world.get_entity(entity).unwrap().get_mut::<I::Component>().unwrap())
         }
     }
 
@@ -257,14 +277,12 @@ fn lookup_db_query_system(mut db_query: DatabaseQuery<AgeQuery>) {
 }
 
 fn increment_age_system(mut db_query: DatabaseQuery<AgeQuery>) {
+    println!("incrementing age");
     let db_entity = DatabaseEntity {
         id: 0
     };
-    let age = db_query.get(&db_entity).unwrap();
-    let new_age = Age {
-        age: age.age + 1
-    };
-
+    let mut age = db_query.get_mut(&db_entity).unwrap();
+    age.age += 1;
 }
 
 pub trait DatabaseResource: Resource + Default {
@@ -305,7 +323,7 @@ fn populate_db(db: ResMut<SqliteDatabaseResource>) {
         .execute(conn)).unwrap();
 }
 
-fn index_lookup(mut index: Index<DatabaseEntityIndex>, mut query: Query<(&Age)>) {
+fn index_lookup(mut index: Index<DatabaseEntityIndex>, mut query: Query<(&mut Age)>) {
     let entity_set = index.lookup(&0);
     let entity = *entity_set.iter().next().unwrap();
     let val = query.get(entity).unwrap();
@@ -415,10 +433,10 @@ async fn main() {
     // Add our system to the schedule
     // schedule.add_systems(movement);
     let mut startup_schedule = Schedule::default();
-    startup_schedule.add_systems(populate_db.before(increment_age_system));
+    startup_schedule.add_systems(populate_db);
     startup_schedule.run(&mut world);
 
-    // schedule.add_systems(increment_age_system.before(lookup_db_query_system));
+    schedule.add_systems(increment_age_system.before(lookup_db_query_system));
     schedule.add_systems(lookup_db_query_system);
     // schedule.add_systems(index_lookup.after(increment_age_system));
     schedule.add_systems(movement_changes);
