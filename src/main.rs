@@ -3,6 +3,7 @@ use std::{any::TypeId, ops::Deref};
 use bevy_ecs::{component::Component, prelude::*, system::SystemParam};
 use bevy_reflect::prelude::*;
 use bevy_mod_index::prelude::*;
+use bevy_utils::hashbrown::HashSet;
 use sqlx::{database::HasArguments, sqlite::*, Row, Transaction};
 use futures::{executor::block_on, Future, StreamExt};
 use bevy_mod_index::index::IndexFetchState;
@@ -104,13 +105,12 @@ pub trait DatabaseQueryInfo: Sized {
 pub struct DatabaseQueryFetchState<'w, 's, I: DatabaseQueryInfo + 'static> {
     db_state: <ResMut<'w, I::Database> as SystemParam>::State,
     phantom: std::marker::PhantomData<&'s ()>,
-    index_state: IndexFetchState<'static, 'static, DatabaseEntityIndex>,
 }
 
 pub struct DatabaseQuery<'w, 's, I:DatabaseQueryInfo + 'static> {
     db: ResMut<'w, I::Database>,
     world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>,
-    index: Index<'w, 's, DatabaseEntityIndex>,
+    phantom: std::marker::PhantomData<&'s ()>,
 }
 
 // pub type RODatabaseQueryItem<'a, I> = &'a I::Component;
@@ -121,9 +121,17 @@ impl<'w, 's, I:DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
         // using the database entity index
         // fetch from resource
 
-        self.index.refresh();
-        let entity_set = self.index.lookup(&db_entity.id);
-        self.index.refresh();
+        let val = db_entity.id;
+
+        let mut reader = IntoSystem::into_system(move |mut index: Index<DatabaseEntityIndex>| -> HashSet<Entity> {
+            index.lookup(&val)
+        });
+        
+        let entity_set : HashSet<Entity> = unsafe {
+            reader.initialize(&mut self.world.world_mut());
+            reader.run((), &mut self.world.world_mut())
+        };
+
         match entity_set.iter().next() {
             // Entity has been read into memory before
             Some(entity) => {
@@ -204,7 +212,6 @@ unsafe impl<'w, 's, I:DatabaseQueryInfo> SystemParam for DatabaseQuery<'w, 's, I
         DatabaseQueryFetchState {
             db_state: <ResMut<'w, I::Database>>::init_state(world, system_meta),
             phantom: std::marker::PhantomData,
-            index_state: index_state,
         }
     }
 
@@ -223,7 +230,7 @@ unsafe impl<'w, 's, I:DatabaseQueryInfo> SystemParam for DatabaseQuery<'w, 's, I
                 world,
                 change_tick),
             world: world,
-            index: <Index<DatabaseEntityIndex> as SystemParam>::get_param(&mut state.index_state, system_meta, world, change_tick),
+            phantom: std::marker::PhantomData,
         
         };
 
@@ -327,7 +334,7 @@ fn index_lookup(mut index: Index<DatabaseEntityIndex>, mut query: Query<(&mut Ag
     let entity_set = index.lookup(&0);
     let entity = *entity_set.iter().next().unwrap();
     let val = query.get(entity).unwrap();
-    println!("entity: {:?}", val);
+    println!("index entity: {:?}", val);
 }
 
 fn events_ended(mut events: EventReader<PositionChanged>) {
@@ -438,7 +445,7 @@ async fn main() {
 
     schedule.add_systems(increment_age_system.before(lookup_db_query_system));
     schedule.add_systems(lookup_db_query_system);
-    // schedule.add_systems(index_lookup.after(increment_age_system));
+    schedule.add_systems(index_lookup.after(increment_age_system));
     schedule.add_systems(movement_changes);
     // schedule.add_systems(do_nothing);
 
