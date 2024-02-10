@@ -1,12 +1,8 @@
-use std::{any::TypeId, ops::Deref};
-
 use bevy_ecs::{component::Component, prelude::*, system::SystemParam};
-use bevy_reflect::prelude::*;
 use bevy_mod_index::prelude::*;
 use bevy_utils::hashbrown::HashSet;
-use sqlx::{database::HasArguments, sqlite::*, Row, Transaction};
-use futures::{executor::block_on, Future, StreamExt};
-use bevy_mod_index::index::IndexFetchState;
+use sqlx::{database::{HasArguments, HasValueRef}, Type};
+use futures::executor::block_on;
 use async_trait::async_trait;
 
 
@@ -14,7 +10,7 @@ pub struct DatabaseEntityIndex;
 impl IndexInfo for DatabaseEntityIndex {
     type Component = DatabaseEntity;
 
-    type Value = u32;
+    type Value = i64;
 
     type Storage = NoStorage<Self>;
 
@@ -23,6 +19,8 @@ impl IndexInfo for DatabaseEntityIndex {
         c.id
     }
 }
+
+
 
 
 pub fn add_event<T>(world: &mut World)
@@ -36,12 +34,14 @@ where
 
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Component, Debug, Default, sqlx::FromRow)]
 pub struct DatabaseEntity {
-    pub id: u32
+    pub id: i64
 }
-// stop type warning
-pub type Pool<DbR> = sqlx::Pool<<DbR as DatabaseResource>::Database>;
 
-type SqlxQueryAlias<'a, 'b, DBR> = sqlx::query::Query<'a, <DBR as DatabaseResource>::Database, <<DBR as DatabaseResource>::Database as HasArguments<'b>>::Arguments>;
+#[derive(Component, Debug, Default, Clone)]
+pub struct ToBeCreatedDatabaseEntity {}
+
+// stop type warning
+pub type Pool = sqlx::Pool<sqlx::Sqlite>;
 
 #[async_trait]
 pub trait DatabaseQueryInfo: Sized {
@@ -49,11 +49,16 @@ pub trait DatabaseQueryInfo: Sized {
     type Database: DatabaseResource;
     type Index: IndexInfo;
 
-    fn get_component(conn: &Pool<Self::Database>, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>;
+    fn get_component<'c, E>(conn: E, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite>;
     async fn write_component<'c, E>(tr : E, db_entity: &DatabaseEntity, component: &Self::Component) -> Result<(), ()> 
     where
-        E: sqlx::Executor<'c, Database = <Self::Database as DatabaseResource>::Database>;
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite>;
     
+    async fn write_empty_entity<'c, E>(tr : E) -> Result<DatabaseEntity, ()> 
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite>;
 }
 
 pub struct DatabaseQueryFetchState<'w, 's, I: DatabaseQueryInfo + 'static> {
@@ -71,7 +76,7 @@ pub struct DatabaseQuery<'w, 's, I:DatabaseQueryInfo + 'static> {
 
 impl<'w, 's, I:DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
     fn insert_component(&mut self, db_entity : &DatabaseEntity) -> Entity {
-        let conn = self.db.get_connection();
+        let mut conn = self.db.get_transaction();
         // using the database entity index
         // fetch from resource
 
@@ -94,7 +99,7 @@ impl<'w, 's, I:DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
                     Some(_) => return *entity,
                     // Entity does not have the desired component (Load from database)
                     None => {
-                        let db_component = I::get_component(conn, db_entity).unwrap();
+                        let db_component = I::get_component(&mut *conn, db_entity).unwrap();
                         // write the component to the entity
                         unsafe {
                             let w = self.world.world_mut();
@@ -107,7 +112,7 @@ impl<'w, 's, I:DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
             // Entity not found in world
             None => {
                 println!("entity not found in world for db_entity: {:?}", db_entity);
-                let component = I::get_component(conn, db_entity).unwrap();
+                let component = I::get_component(&mut *conn, db_entity).unwrap();
                 unsafe {
                     let w = self.world.world_mut();
                     let entity = w.spawn((DatabaseEntity{id: db_entity.id}, component)).id();
@@ -139,11 +144,35 @@ impl<'w, 's, I:DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
 
     pub async fn write<'c, E>(&self, tr : E, db_entity : &DatabaseEntity, component: &I::Component) -> Result<(), ()> 
     where 
-        E: sqlx::Executor<'c, Database = <I::Database as DatabaseResource>::Database>
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite>
     {
         I::write_component(tr, db_entity, component).await;
 
         Ok(())
+    }
+
+    pub fn create_entity<B: Bundle>(&mut self, component: B) {
+        unsafe {
+            let w = self.world.world_mut();
+            w.spawn((component, ToBeCreatedDatabaseEntity{}));
+        }
+    }
+
+    pub async fn write_empty_entity<'c, E>(&self, tr : E, entity : &Entity) -> Result<DatabaseEntity, ()> 
+    where 
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite>
+    {
+        let db_entity = I::write_empty_entity(tr).await?;
+        // insert into world
+        unsafe {
+            let w = self.world.world_mut();
+            w.entity_mut(*entity).insert(db_entity);
+            //remove the to be created entity
+            w.entity_mut(*entity).remove::<ToBeCreatedDatabaseEntity>();
+        }
+
+        return Ok(db_entity);
+
     }
 }
 
@@ -156,8 +185,8 @@ unsafe impl<'w, 's, I:DatabaseQueryInfo> SystemParam for DatabaseQuery<'w, 's, I
 
     fn init_state(world: &mut World, system_meta: &mut bevy_ecs::system::SystemMeta) -> Self::State {
         // https://github.com/chrisjuchem/bevy_mod_index/blob/15e9b4c9bbf26d4fc087ce056b07d1312464de2f/src/index.rs#L108
-        if !world.contains_resource::<SqliteDatabaseResource>() {
-            world.init_resource::<SqliteDatabaseResource>();
+        if !world.contains_resource::<AnyDatabaseResource>() {
+            world.init_resource::<AnyDatabaseResource>();
         }
 
         let index_state = <Index<DatabaseEntityIndex> as SystemParam>::init_state(world, system_meta);
@@ -193,30 +222,37 @@ unsafe impl<'w, 's, I:DatabaseQueryInfo> SystemParam for DatabaseQuery<'w, 's, I
 }
 
 
+// Initially was going to have this trait to allow for implementing for different sql databases
+// but the type system became too complex (for me)
+// Now just use the sqlx::Sqlite database type
+// Left the indirection in case I want to change it later
+
 pub trait DatabaseResource: Resource + Default {
-    type Database: sqlx::Database;
-    fn get_connection(&self) -> &sqlx::Pool<Self::Database>;
+    fn get_connection(&self) -> &sqlx::Pool<sqlx::Sqlite>;
+    fn get_transaction(&self) -> sqlx::Transaction<sqlx::Sqlite>;
 }
 
 #[derive(Resource)]
-pub struct SqliteDatabaseResource {
-    pool: SqlitePool
+pub struct AnyDatabaseResource {
+    pool: sqlx::SqlitePool,
 }
 
-impl Default for SqliteDatabaseResource {
+impl Default for AnyDatabaseResource {
     fn default() -> Self {
-        let pool= block_on(SqlitePool::connect("sqlite::memory:")).unwrap();
+        let pool= block_on(sqlx::SqlitePool::connect("sqlite::memory:")).unwrap();
 
-        SqliteDatabaseResource {
-            pool
+        AnyDatabaseResource {
+            pool,
         }
     }
 }
 
-impl DatabaseResource for SqliteDatabaseResource {
-    type Database = Sqlite;
-    fn get_connection(&self) -> &sqlx::Pool<Self::Database> {
+impl DatabaseResource for AnyDatabaseResource {
+    fn get_connection(&self) -> &sqlx::Pool<sqlx::Sqlite> {
         &self.pool
+    }
+    fn get_transaction(&self) -> sqlx::Transaction<sqlx::Sqlite> {
+        block_on(self.pool.begin()).unwrap()
     }
 
 }
