@@ -9,6 +9,9 @@ keywords = [
     "bevy",
 ]
 
+[[example]]
+name = "marketplace"
+
 [dependencies]
 anyhow = "1.0.79"
 async-trait = "0.1.77"
