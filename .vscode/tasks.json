@@ -5,6 +5,7 @@
 			"type": "cargo",
 			"command": "build",
 			"args": [
+				"--example", "marketplace"
 			],
 			"problemMatcher": [
 				"$rustc"
@@ -13,7 +14,7 @@
 				"kind": "build",
 				"isDefault": true
 			},
-			"label": "bevy_erm",		
+			"label": "marketplace",		
 		}
 	]
 }

@@ -195,17 +195,25 @@ fn index_lookup(mut index: Index<DatabaseEntityIndex>, query: Query<&mut MarketI
 }
 
 fn flush_to_db(
-    query: Query<(Entity, &DatabaseEntity, Option<&MarketItem>)>, 
-    db_query : DatabaseQuery<ItemQuery>) {
+    query: Query<(Entity, &DatabaseEntity, Option<&MarketItem>, Option<&PurchasedItem>)>, 
+    // db_query : DatabaseQuery<ItemQuery>,
+    purchased_query : DatabaseQuery<PurchaseItemQuery>
+    ) {
     block_on(async {
         println!("flushing to db");
 
-        let mut transaction = db_query.db.get_connection().begin().await.unwrap();
+        let mut transaction = purchased_query.db.get_connection().begin().await.unwrap();
 
         println!("transaction started");
-        for (_, db_entity, market_item) in query.iter() {
-            if let Some(market_item) = market_item {
-                db_query.update_component(&mut *transaction, db_entity, &market_item).await.unwrap();
+        for (_, db_entity, market_item, purchased_item) in query.iter() {
+            // TODO
+            // if let Some(market_item) = market_item {
+            //     db_query.update_component(&mut *transaction, db_entity, &market_item).await.unwrap();
+            // }
+
+            if let Some(purchased_item) = purchased_item {
+                println!("purchased item: {:?}", purchased_item);
+                 purchased_query.update_component(&mut *transaction, db_entity, &purchased_item).await.unwrap();
             }
         }
 
@@ -218,10 +226,16 @@ fn flush_to_db(
 
     block_on(async {
       // read the market_item database table
-      let market_item = sqlx::query_as::<_, MarketItem>("SELECT * FROM items").bind(0).fetch(db_query.db.get_connection());
+      let market_item = sqlx::query_as::<_, MarketItem>("SELECT * FROM items").bind(0).fetch(purchased_query.db.get_connection());
       market_item.for_each(|item| async {
           println!("item: {:?}", item.unwrap());
       }).await;
+
+        // read the purchased_item database table
+        let purchased_item = sqlx::query_as::<_, PurchasedItem>("SELECT * FROM purchased_items").bind(0).fetch(purchased_query.db.get_connection());
+        purchased_item.for_each(|item| async {
+            println!("purchased item: {:?}", item.unwrap());
+        }).await;
     });
 
 
