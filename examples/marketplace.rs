@@ -153,11 +153,10 @@ fn lookup_db_query_system(mut db_query: DatabaseQuery<ItemQuery>) {
     println!("age: {:?}", age);
 }
 
-fn purchase_system(mut events: EventReader<Purchase>, mut db_query: DatabaseQuery<ItemQuery>, mut db_query_purchased: DatabaseQuery<PurchaseItemQuery>) {
+fn purchase_system(mut events: EventReader<Purchase>, mut db_query_purchased: DatabaseQuery<PurchaseItemQuery>) {
+    println!("purchase system");
     for event in events.read() {
-        let purchaser = db_query.get_mut(&event.purchaser).unwrap();
-        let item = db_query.get(&event.item).unwrap();
-
+        println!("purchased item: {:?}", event.item);
         let purchased_item = PurchasedItem {
             item: event.item,
             buyer: event.purchaser,
@@ -184,13 +183,6 @@ fn populate_db(db: ResMut<AnyDatabaseResource>) {
         // users table
         sqlx::query("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, buyer BOOLEAN, seller BOOLEAN)")
             .execute(conn).await.unwrap();
-
-        // populate one buyer and one seller
-        sqlx::query("INSERT INTO users (id, name, buyer, seller) VALUES (0, 'buyer', 1, 0)").execute(conn).await.unwrap();
-        sqlx::query("INSERT INTO users (id, name, buyer, seller) VALUES (1, 'seller', 0, 1)").execute(conn).await.unwrap();
-
-        // add one item to the market
-        sqlx::query("INSERT INTO items (seller_id, name, price) VALUES (1, 'corn', 100)").execute(conn).await.unwrap();
     });
    
 }
@@ -226,7 +218,7 @@ fn flush_to_db(
 
     block_on(async {
       // read the market_item database table
-      let mut market_item = sqlx::query_as::<_, MarketItem>("SELECT * FROM items").bind(0).fetch(db_query.db.get_connection());
+      let market_item = sqlx::query_as::<_, MarketItem>("SELECT * FROM items").bind(0).fetch(db_query.db.get_connection());
       market_item.for_each(|item| async {
           println!("item: {:?}", item.unwrap());
       }).await;
@@ -234,9 +226,6 @@ fn flush_to_db(
 
 
 }
-
-#[derive(Event)]
-struct TestEvent;
 
 async fn run() {
         // Create a new empty World to hold our Entities and Components
@@ -261,37 +250,53 @@ async fn run() {
         add_event::<Purchase>(&mut world);
         clear_events_schedule.add_systems(bevy_ecs::event::event_update_system::<Purchase>);
     
-        let mut query = world.query::<Entity>();
-    
-        let mut entities = vec![];
-        for entity in query.iter(&world) {
-            entities.push(entity);
-        }
-    
-        let mut e = world.get_resource_mut::<Events<Purchase>>().unwrap();
-    
-        // for entity in entities {
-        //     e.send(Purchase {
-        //         purchaser: purchaser,
-        //         age: 0,
-        //     });
-        // }
-    
-     
-    
-        // want to find out for a particular component what its component id is 
-    
-    
         // Add our system to the schedule
         // schedule.add_systems(movement);
         let mut startup_schedule = Schedule::default();
         startup_schedule.add_systems(populate_db);
         startup_schedule.run(&mut world);
+
+        // Fill the db with some data
+        {
+            let mut reader = IntoSystem::into_system(|db : ResMut<AnyDatabaseResource>, mut purchase_events : EventWriter<Purchase> |{
+                let conn = db.get_connection();
+                let purchaser = 0;
+                let seller = 1;
+                let item = 0;
+    
+                block_on( async {
+                    // populate one buyer and one seller
+                    sqlx::query("INSERT INTO users (id, name, buyer, seller) VALUES (?, 'buyer', 1, 0)").bind(purchaser).execute(conn).await.unwrap();
+                    sqlx::query("INSERT INTO users (id, name, buyer, seller) VALUES (?, 'seller', 0, 1)").bind(seller).execute(conn).await.unwrap();
+    
+                    // add one item to the market
+                    sqlx::query("INSERT INTO items (seller_id, name, price) VALUES (?, 'corn', 100)").bind(item).execute(conn).await.unwrap();
+                });
+    
+                // add the triggering purchase event
+    
+                purchase_events.send(Purchase {
+                    purchaser: DatabaseEntity {
+                        id: purchaser,
+                        persisted: true,
+                    },
+                    item: DatabaseEntity {
+                        id: item,
+                        persisted: true,
+                    },
+                });
+            });
+
+            reader.initialize(&mut world);
+            reader.run((), &mut world);
+        }
+
     
         // schedule.add_systems(increment_age_system.before(lookup_db_query_system));
         // schedule.add_systems(lookup_db_query_system);
         // schedule.add_systems(index_lookup.after(increment_age_system));
         // schedule.add_systems(do_nothing);
+        schedule.add_systems(purchase_system);
     
     
         let mut reader = IntoSystem::into_system(|events: EventReader<Purchase>| -> bool {
