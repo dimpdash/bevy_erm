@@ -1,6 +1,6 @@
 
 use bevy_ecs::{component::Component, prelude::*};
-use bevy_erm::{add_event, DatabaseEntity, DatabaseEntityIndex, DatabaseQuery, DatabaseQueryInfo, DatabaseResource, AnyDatabaseResource, ToBeCreatedDatabaseEntity};
+use bevy_erm::{add_event, DatabaseEntity, DatabaseEntityIndex, DatabaseQuery, DatabaseQueryInfo, DatabaseResource, AnyDatabaseResource};
 use bevy_mod_index::prelude::*;
 use futures::{executor::block_on, StreamExt};
 use async_trait::async_trait;
@@ -62,7 +62,7 @@ impl DatabaseQueryInfo for ItemQuery {
         Ok(item)
     }
 
-    async fn write_component<'c, E>(tr: E, db_entity: &DatabaseEntity, component: &Self::Component) -> Result<(), ()>
+    async fn update_component<'c, E>(tr: E, db_entity: &DatabaseEntity, component: &Self::Component) -> Result<(), ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
@@ -78,17 +78,18 @@ impl DatabaseQueryInfo for ItemQuery {
         }
     }
 
-    async fn write_empty_entity<'c, E>(tr : E) -> Result<DatabaseEntity, ()> 
+    async fn insert_component<'c, E>(tr : E, db_entity: &DatabaseEntity, component: &Self::Component) -> Result<(), ()> 
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite> {
-        let r = sqlx::query("INSERT INTO items DEFAULT VALUES RETURNING *").execute(tr).await;
+        let r = sqlx::query("INSERT INTO items (id, seller_id, name, price) VALUES (?, ?, ?, ?)")
+            .bind(db_entity.id)
+            .bind(component.seller_id.id as i64)
+            .bind(component.name.clone())
+            .bind(component.price)
+            .execute(tr).await;
 
-        
-        match r {
-            Ok(_) => {
-                let id = 0; //todo get the id from the result
-                Ok(DatabaseEntity{id})
-            },
+            match r {
+            Ok(_) => Ok(()),
             Err(_) => Err(()),
         }
     }
@@ -111,7 +112,7 @@ impl DatabaseQueryInfo for PurchaseItemQuery {
         Ok(item)
     }
 
-    async fn write_component<'c, E>(tr: E, db_entity: &DatabaseEntity, component: &Self::Component) -> Result<(), ()>
+    async fn update_component<'c, E>(tr: E, db_entity: &DatabaseEntity, component: &Self::Component) -> Result<(), ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
@@ -126,16 +127,18 @@ impl DatabaseQueryInfo for PurchaseItemQuery {
         }
     }
 
-    async fn write_empty_entity<'c, E>(tr : E) -> Result<DatabaseEntity, ()> 
+    async fn insert_component<'c, E>(tr : E, db_entity: &DatabaseEntity, component: &Self::Component) -> Result<(), ()> 
     where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite> {
-        let r = sqlx::query("INSERT INTO purchased_items DEFAULT VALUES RETURNING *").execute(tr).await;
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite> 
+    {
+        let r = sqlx::query("INSERT INTO purchased_items (id, item, buyer) VALUES (?, ?, ?)")
+            .bind(db_entity.id)
+            .bind(component.item.id)
+            .bind(component.buyer.id)
+            .execute(tr).await;
 
         match r {
-            Ok(_) => {
-                let id = 0; //todo get the id from the result
-                Ok(DatabaseEntity{id})
-            },
+            Ok(_) => Ok(()),
             Err(_) => Err(()),
         }
     }   
@@ -143,7 +146,8 @@ impl DatabaseQueryInfo for PurchaseItemQuery {
 
 fn lookup_db_query_system(mut db_query: DatabaseQuery<ItemQuery>) {
     let db_entity = DatabaseEntity {
-        id: 0
+        id: 0,
+        persisted: true,
     };
     let age = db_query.get(&db_entity).unwrap();
     println!("age: {:?}", age);
@@ -200,21 +204,16 @@ fn index_lookup(mut index: Index<DatabaseEntityIndex>, query: Query<&mut MarketI
 
 fn flush_to_db(
     query: Query<(Entity, &DatabaseEntity, Option<&MarketItem>)>, 
-    to_be_created_query : Query<(Entity), With<ToBeCreatedDatabaseEntity>>, 
     db_query : DatabaseQuery<ItemQuery>) {
     block_on(async {
         println!("flushing to db");
 
         let mut transaction = db_query.db.get_connection().begin().await.unwrap();
 
-        for entity in to_be_created_query.iter() {
-            db_query.write_empty_entity(&mut *transaction, &entity).await.unwrap();
-        }
-
         println!("transaction started");
         for (_, db_entity, market_item) in query.iter() {
             if let Some(market_item) = market_item {
-                db_query.write(&mut *transaction, &DatabaseEntity{id: db_entity.id}, &market_item).await.unwrap();
+                db_query.update_component(&mut *transaction, db_entity, &market_item).await.unwrap();
             }
         }
 
@@ -243,13 +242,6 @@ async fn run() {
         // Create a new empty World to hold our Entities and Components
         let mut world = World::new();
 
-        let purchaser = DatabaseEntity {id: 0};
-    
-        // Spawn an entity
-        world.spawn((
-            purchaser,
-        ));
-    
         world.init_component::<MarketItem>();
         world.init_component::<User>();
         world.init_component::<Seller>();

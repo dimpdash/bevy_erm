@@ -32,13 +32,26 @@ where
     }
 }
 
-#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Component, Debug, Default, sqlx::FromRow)]
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Component, Debug, sqlx::FromRow)]
+#[sqlx(default)]
 pub struct DatabaseEntity {
-    pub id: i64
+    pub id: i64,
+
+    // Whether the entity has been persisted to the database ever
+    // When creating an entity it will only be in memory and not have
+    // been entered into the database yet, so will need to be inserted instead
+    // updated
+    pub persisted: bool
 }
 
-#[derive(Component, Debug, Default, Clone)]
-pub struct ToBeCreatedDatabaseEntity {}
+impl Default for DatabaseEntity {
+    fn default() -> Self {
+        DatabaseEntity {
+            id: 0,
+            persisted: true,
+        }
+    }
+}
 
 // stop type warning
 pub type Pool = sqlx::Pool<sqlx::Sqlite>;
@@ -52,11 +65,11 @@ pub trait DatabaseQueryInfo: Sized {
     fn get_component<'c, E>(conn: E, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>;
-    async fn write_component<'c, E>(tr : E, db_entity: &DatabaseEntity, component: &Self::Component) -> Result<(), ()> 
+    async fn update_component<'c, E>(tr : E, db_entity: &DatabaseEntity, component: &Self::Component) -> Result<(), ()> 
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>;
     
-    async fn write_empty_entity<'c, E>(tr : E) -> Result<DatabaseEntity, ()> 
+    async fn insert_component<'c, E>(tr : E, db_entity: &DatabaseEntity, component: &Self::Component) -> Result<(), ()> 
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>;
 }
@@ -75,7 +88,7 @@ pub struct DatabaseQuery<'w, 's, I:DatabaseQueryInfo + 'static> {
 // pub type RODatabaseQueryItem<'a, I> = &'a I::Component;
 
 impl<'w, 's, I:DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
-    fn insert_component(&mut self, db_entity : &DatabaseEntity) -> Entity {
+    fn get_internal(&mut self, db_entity : &DatabaseEntity) -> Entity {
         let mut conn = self.db.get_transaction();
         // using the database entity index
         // fetch from resource
@@ -115,7 +128,7 @@ impl<'w, 's, I:DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
                 let component = I::get_component(&mut *conn, db_entity).unwrap();
                 unsafe {
                     let w = self.world.world_mut();
-                    let entity = w.spawn((DatabaseEntity{id: db_entity.id}, component)).id();
+                    let entity = w.spawn((DatabaseEntity{id: db_entity.id, persisted: true}, component)).id();
                     entity
                 }
             }
@@ -124,7 +137,7 @@ impl<'w, 's, I:DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
 
     pub fn get(&mut self, db_entity : &DatabaseEntity) -> Result<&I::Component, ()> {
         println!("getting component");
-        let entity = self.insert_component(db_entity);
+        let entity = self.get_internal(db_entity);
 
         unsafe {
             Ok(
@@ -135,44 +148,46 @@ impl<'w, 's, I:DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
 
     pub fn get_mut(&mut self, db_entity : &DatabaseEntity) -> Result<Mut<I::Component>, ()> {
         println!("getting mut component");
-        let entity = self.insert_component(db_entity);
+        let entity = self.get_internal(db_entity);
 
         unsafe {
             Ok(self.world.get_entity(entity).unwrap().get_mut::<I::Component>().unwrap())
         }
     }
 
-    pub async fn write<'c, E>(&self, tr : E, db_entity : &DatabaseEntity, component: &I::Component) -> Result<(), ()> 
+    pub async fn update_or_insert_component<'c, E>(&self, tr : E, db_entity : &mut DatabaseEntity, component: &I::Component) -> Result<(), ()> 
     where 
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>
     {
-        I::write_component(tr, db_entity, component).await;
+        if db_entity.persisted {
+            self.update_component(tr, db_entity, component).await?;
+        } else {
+            self.insert_component(tr, db_entity, component).await?;
+        }
+        return Ok(());
+    }
 
+    pub async fn update_component<'c, E>(&self, tr : E, db_entity : &DatabaseEntity, component: &I::Component) -> Result<(), ()> 
+    where 
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite>
+    {
+        I::update_component(tr, db_entity, component).await?;
         Ok(())
     }
 
     pub fn create_entity<B: Bundle>(&mut self, component: B) {
         unsafe {
             let w = self.world.world_mut();
-            w.spawn((component, ToBeCreatedDatabaseEntity{}));
+            w.spawn((component, DatabaseEntity{id: self.db.get_key(), persisted: false}));
         }
     }
 
-    pub async fn write_empty_entity<'c, E>(&self, tr : E, entity : &Entity) -> Result<DatabaseEntity, ()> 
+    pub async fn insert_component<'c, E>(&self, tr : E, db_entity : &mut DatabaseEntity, component: &I::Component) -> Result<(), ()> 
     where 
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>
     {
-        let db_entity = I::write_empty_entity(tr).await?;
-        // insert into world
-        unsafe {
-            let w = self.world.world_mut();
-            w.entity_mut(*entity).insert(db_entity);
-            //remove the to be created entity
-            w.entity_mut(*entity).remove::<ToBeCreatedDatabaseEntity>();
-        }
-
-        return Ok(db_entity);
-
+        I::insert_component(tr, db_entity, component).await?;
+        Ok(())
     }
 }
 
@@ -230,11 +245,14 @@ unsafe impl<'w, 's, I:DatabaseQueryInfo> SystemParam for DatabaseQuery<'w, 's, I
 pub trait DatabaseResource: Resource + Default {
     fn get_connection(&self) -> &sqlx::Pool<sqlx::Sqlite>;
     fn get_transaction(&self) -> sqlx::Transaction<sqlx::Sqlite>;
+    // A way to get a unique key for the database
+    fn get_key(&mut self) -> i64;
 }
 
 #[derive(Resource)]
 pub struct AnyDatabaseResource {
     pool: sqlx::SqlitePool,
+    min_key: i64,
 }
 
 impl Default for AnyDatabaseResource {
@@ -243,6 +261,7 @@ impl Default for AnyDatabaseResource {
 
         AnyDatabaseResource {
             pool,
+            min_key: 0,
         }
     }
 }
@@ -253,6 +272,14 @@ impl DatabaseResource for AnyDatabaseResource {
     }
     fn get_transaction(&self) -> sqlx::Transaction<sqlx::Sqlite> {
         block_on(self.pool.begin()).unwrap()
+    }
+
+    // Rather than actually querying the database for key just hold on to the last key we had to issue
+    // This is a bit of a hack but it's fine for now. As POC and only considering one machine
+    // It is progressing into the negatives so that instantiating any objects with positive keys will not conflict
+    fn get_key(&mut self) -> i64 {
+        self.min_key +=1;
+        self.min_key
     }
 
 }
