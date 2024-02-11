@@ -354,8 +354,6 @@ pub fn flush_component_to_db<T: DatabaseQueryInfo>(
     let tr = tr_option.as_mut().unwrap();
 
     block_on(async {
-        println!("flushing to db");
-
         for (db_entity, component) in query.iter() {
             db_query
                 .update_or_insert_component(&mut **tr, db_entity, component)
@@ -363,6 +361,4 @@ pub fn flush_component_to_db<T: DatabaseQueryInfo>(
                 .unwrap();
         }
     });
-
-    println!("flushed to db");
 }

@@ -1,4 +1,4 @@
-use bevy_ecs::{component::Component, prelude::*};
+use bevy_ecs::{component::Component, event, prelude::*};
 use bevy_erm::{
     add_event, flush_component_to_db, AnyDatabaseResource, DatabaseEntity, DatabaseEntityIndex,
     DatabaseQuery, DatabaseQueryInfo, DatabaseResource,
@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use futures::executor::block_on;
 use sqlx::{FromRow, Row};
 
-#[derive(Event)]
+#[derive(Event, Debug)]
 pub struct Purchase {
     pub item: DatabaseEntity,
     pub purchaser: DatabaseEntity,
@@ -332,8 +332,7 @@ async fn run() {
 
     schedule.add_systems(purchase_system);
 
-    let mut reader = IntoSystem::into_system(|events: EventReader<Purchase>| -> bool {
-        println!("event count {}", events.len());
+    let mut reader = IntoSystem::into_system(|mut events: EventReader<Purchase>| -> bool {
         !events.is_empty()
     });
 
@@ -344,11 +343,18 @@ async fn run() {
     let mut count = 0;
     const MAX_COUNT: u32 = 3;
 
+    let mut run_info_schedule = Schedule::default();
+    run_info_schedule.add_systems(|mut events: EventReader<Purchase>| {
+        for event in events.read() {
+            println!("processing event: {:?}", event);
+        }
+    });
+
     // loop until all events are empty
     while still_events_to_read(&mut world) && count < MAX_COUNT {
-        println!("running");
+        run_info_schedule.run(&mut world);
+
         schedule.run(&mut world);
-        println!("ran");
 
         // clear all the events as they should have been read by all the systems
         clear_events_schedule.run(&mut world);
@@ -359,6 +365,8 @@ async fn run() {
     flush_to_db_schedule.add_systems(flush_component_to_db::<ItemQuery>);
     flush_to_db_schedule.add_systems(flush_component_to_db::<PurchaseItemQuery>);
     flush_to_db_schedule.run(&mut world);
+
+
 
     let mut commit_schedule = Schedule::default();
     commit_schedule.add_systems(|db: ResMut<AnyDatabaseResource>| {
