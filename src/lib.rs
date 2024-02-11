@@ -1,12 +1,12 @@
-use std::{borrow::{Borrow}, sync::{Arc, RwLock}};
+use std::sync::{Arc, RwLock};
 
 use bevy_ecs::{component::Component, prelude::*, system::SystemParam};
 use bevy_mod_index::prelude::*;
 use bevy_utils::hashbrown::HashSet;
-use sqlx::{database::{HasArguments, HasValueRef}, sqlite::SqliteTypeInfo, SqliteExecutor, Transaction, Type, Value, ValueRef};
-use futures::{executor::block_on, stream::BoxStream};
+use sqlx::Transaction;
+use futures::executor::block_on;
 use async_trait::async_trait;
-use sqlx::sqlite::Sqlite;
+
 
 pub struct DatabaseEntityIndex;
 impl IndexInfo for DatabaseEntityIndex {
@@ -49,9 +49,9 @@ impl From<bool> for Persisted {
     }
 }
 
-impl Into<bool> for Persisted {
-    fn into(self) -> bool {
-        self.0
+impl From<Persisted> for bool {
+    fn from(val: Persisted) -> Self {
+        val.0
     }
 }
 
@@ -120,8 +120,8 @@ impl<'w, 's, I:DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
         });
         
         let entity_set : HashSet<Entity> = unsafe {
-            reader.initialize(&mut self.world.world_mut());
-            reader.run((), &mut self.world.world_mut())
+            reader.initialize(self.world.world_mut());
+            reader.run((), self.world.world_mut())
         };
 
         match entity_set.iter().next() {
@@ -129,7 +129,7 @@ impl<'w, 's, I:DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
             Some(entity) => {
                 match unsafe {self.world.world_mut().get::<I::Component>(*entity)} {
                     // Entity also already has the desired component
-                    Some(_) => return *entity,
+                    Some(_) => *entity,
                     // Entity does not have the desired component (Load from database)
                     None => {
 
@@ -139,7 +139,7 @@ impl<'w, 's, I:DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
                         unsafe {
                             let w = self.world.world_mut();
                             w.entity_mut(*entity).insert(db_component);
-                            return *entity
+                            *entity
                         }
                     }
                     }
@@ -187,7 +187,7 @@ impl<'w, 's, I:DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
         } else {
             self.insert_component(tr, db_entity, component).await?;
         }
-        return Ok(());
+        Ok(())
     }
 
     pub async fn update_component<'c, E>(&self, tr : E, db_entity : &DatabaseEntity, component: &I::Component) -> Result<(), ()> 
@@ -247,7 +247,7 @@ unsafe impl<'w, 's, I:DatabaseQueryInfo> SystemParam for DatabaseQuery<'w, 's, I
                 system_meta,
                 world,
                 change_tick),
-            world: world,
+            world,
             phantom: std::marker::PhantomData,
         
         };

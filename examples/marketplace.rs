@@ -1,10 +1,10 @@
 
 use bevy_ecs::{component::Component, prelude::*};
-use bevy_erm::{add_event, flush_component_to_db, AnyDatabaseResource, DatabaseEntity, DatabaseEntityIndex, DatabaseQuery, DatabaseQueryInfo, DatabaseResource, Persisted};
-use bevy_mod_index::prelude::*;
-use futures::{executor::block_on, stream::BoxStream, StreamExt};
+use bevy_erm::{add_event, flush_component_to_db, AnyDatabaseResource, DatabaseEntity, DatabaseEntityIndex, DatabaseQuery, DatabaseQueryInfo, DatabaseResource};
+
+use futures::executor::block_on;
 use async_trait::async_trait;
-use sqlx::{Encode, FromRow, Row};
+use sqlx::{FromRow, Row};
 
 #[derive(Event)]
 pub struct Purchase {
@@ -32,6 +32,7 @@ impl FromRow<'_, sqlx::sqlite::SqliteRow> for MarketItem {
 
 #[derive(Component, Debug, Default, Clone, sqlx::FromRow)]
 struct User {
+    #[allow(dead_code)]
     name: String,
 }
 
@@ -77,10 +78,10 @@ impl DatabaseQueryInfo for ItemQuery {
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         let r = sqlx::query("UPDATE items SET seller_id = ?, name = ?, price WHERE id = ?")
-            .bind(component.seller_id.id as i64)
+            .bind(component.seller_id.id)
             .bind(component.name.clone())
             .bind(component.price)
-            .bind(db_entity.id as i64)
+            .bind(db_entity.id)
             .execute(tr).await;
         match r {
             Ok(_) => Ok(()),
@@ -94,7 +95,7 @@ impl DatabaseQueryInfo for ItemQuery {
     {
         let r = sqlx::query("INSERT INTO items (id, seller_id, name, price) VALUES (?, ?, ?, ?)")
             .bind(db_entity.id)
-            .bind(component.seller_id.id as i64)
+            .bind(component.seller_id.id)
             .bind(component.name.clone())
             .bind(component.price)
             .execute(tr).await;
