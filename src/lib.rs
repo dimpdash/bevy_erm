@@ -1,10 +1,12 @@
+use std::{borrow::{Borrow}, sync::{Arc, RwLock}};
+
 use bevy_ecs::{component::Component, prelude::*, system::SystemParam};
 use bevy_mod_index::prelude::*;
 use bevy_utils::hashbrown::HashSet;
-use sqlx::{database::{HasArguments, HasValueRef}, Type};
-use futures::executor::block_on;
+use sqlx::{database::{HasArguments, HasValueRef}, sqlite::SqliteTypeInfo, SqliteExecutor, Transaction, Type, Value, ValueRef};
+use futures::{executor::block_on, stream::BoxStream};
 use async_trait::async_trait;
-
+use sqlx::sqlite::Sqlite;
 
 pub struct DatabaseEntityIndex;
 impl IndexInfo for DatabaseEntityIndex {
@@ -32,8 +34,28 @@ where
     }
 }
 
-#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Component, Debug, sqlx::FromRow)]
-#[sqlx(default)]
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Debug, sqlx::FromRow)]
+pub struct Persisted(bool);
+
+impl Default for Persisted {
+    fn default() -> Self {
+        Persisted(true)
+    }
+}
+
+impl From<bool> for Persisted {
+    fn from(b: bool) -> Self {
+        Persisted(b)
+    }
+}
+
+impl Into<bool> for Persisted {
+    fn into(self) -> bool {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Component, Debug, Default, sqlx::FromRow)]
 pub struct DatabaseEntity {
     pub id: i64,
 
@@ -41,24 +63,17 @@ pub struct DatabaseEntity {
     // When creating an entity it will only be in memory and not have
     // been entered into the database yet, so will need to be inserted instead
     // updated
-    pub persisted: bool
+    #[sqlx(skip)]
+    pub persisted: Persisted,
 }
 
-impl Default for DatabaseEntity {
-    fn default() -> Self {
-        DatabaseEntity {
-            id: 0,
-            persisted: true,
-        }
-    }
-}
 
 // stop type warning
 pub type Pool = sqlx::Pool<sqlx::Sqlite>;
 
 #[async_trait]
 pub trait DatabaseQueryInfo: Sized {
-    type Component: Component + Default;
+    type Component: Component + Default + for<'a> sqlx::FromRow<'a, sqlx::sqlite::SqliteRow> + Unpin + std::fmt::Debug;
     type Database: DatabaseResource;
     type Index: IndexInfo;
 
@@ -72,6 +87,8 @@ pub trait DatabaseQueryInfo: Sized {
     async fn insert_component<'c, E>(tr : E, db_entity: &DatabaseEntity, component: &Self::Component) -> Result<(), ()> 
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>;
+
+    fn table_name() -> Result<&'static str, ()>;
 }
 
 pub struct DatabaseQueryFetchState<'w, 's, I: DatabaseQueryInfo + 'static> {
@@ -89,9 +106,12 @@ pub struct DatabaseQuery<'w, 's, I:DatabaseQueryInfo + 'static> {
 
 impl<'w, 's, I:DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
     fn get_internal(&mut self, db_entity : &DatabaseEntity) -> Entity {
-        let mut conn = self.db.get_transaction();
+        // let conn = self.db.get_transaction();
         // using the database entity index
         // fetch from resource
+        let db_handle = self.db.get_connection();
+        let tr_option = &mut (*db_handle).write().unwrap().tr;
+        let conn = tr_option.as_mut().unwrap();
 
         let val = db_entity.id;
 
@@ -112,7 +132,9 @@ impl<'w, 's, I:DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
                     Some(_) => return *entity,
                     // Entity does not have the desired component (Load from database)
                     None => {
-                        let db_component = I::get_component(&mut *conn, db_entity).unwrap();
+
+
+                        let db_component = I::get_component(&mut **conn, db_entity).unwrap();
                         // write the component to the entity
                         unsafe {
                             let w = self.world.world_mut();
@@ -125,10 +147,11 @@ impl<'w, 's, I:DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
             // Entity not found in world
             None => {
                 println!("entity not found in world for db_entity: {:?}", db_entity);
-                let component = I::get_component(&mut *conn, db_entity).unwrap();
+                
+                let component = I::get_component(&mut **conn, db_entity).unwrap();
                 unsafe {
                     let w = self.world.world_mut();
-                    let entity = w.spawn((DatabaseEntity{id: db_entity.id, persisted: true}, component)).id();
+                    let entity = w.spawn((DatabaseEntity{id: db_entity.id, persisted: true.into()}, component)).id();
                     entity
                 }
             }
@@ -155,11 +178,11 @@ impl<'w, 's, I:DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
         }
     }
 
-    pub async fn update_or_insert_component<'c, E>(&self, tr : E, db_entity : &mut DatabaseEntity, component: &I::Component) -> Result<(), ()> 
+    pub async fn update_or_insert_component<'c, E>(&self, tr : E, db_entity : &DatabaseEntity, component: &I::Component) -> Result<(), ()> 
     where 
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>
     {
-        if db_entity.persisted {
+        if db_entity.persisted.into() {
             self.update_component(tr, db_entity, component).await?;
         } else {
             self.insert_component(tr, db_entity, component).await?;
@@ -178,11 +201,11 @@ impl<'w, 's, I:DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
     pub fn create_entity<B: Bundle>(&mut self, component: B) {
         unsafe {
             let w = self.world.world_mut();
-            w.spawn((component, DatabaseEntity{id: self.db.get_key(), persisted: false}));
+            w.spawn((component, DatabaseEntity{id: self.db.get_key(), persisted: false.into()}));
         }
     }
 
-    pub async fn insert_component<'c, E>(&self, tr : E, db_entity : &mut DatabaseEntity, component: &I::Component) -> Result<(), ()> 
+    pub async fn insert_component<'c, E>(&self, tr : E, db_entity : &DatabaseEntity, component: &I::Component) -> Result<(), ()> 
     where 
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>
     {
@@ -243,45 +266,65 @@ unsafe impl<'w, 's, I:DatabaseQueryInfo> SystemParam for DatabaseQuery<'w, 's, I
 // Left the indirection in case I want to change it later
 
 pub trait DatabaseResource: Resource + Default {
-    fn get_connection(&self) -> &sqlx::Pool<sqlx::Sqlite>;
-    fn get_transaction(&self) -> sqlx::Transaction<sqlx::Sqlite>;
+    fn get_connection(&self) -> Arc<RwLock<DatabaseHandle>>;
     // A way to get a unique key for the database
     fn get_key(&mut self) -> i64;
 }
 
-#[derive(Resource)]
-pub struct AnyDatabaseResource {
-    pool: sqlx::SqlitePool,
-    min_key: i64,
+pub struct AnyDatabaseResource2 {
+    a: &'static mut i64,
 }
+
+impl AnyDatabaseResource2 {
+    fn get_a2(&'static mut self) -> &'static mut i64 {
+       &mut self.a
+    }
+}
+
+
+#[derive(Debug)]
+pub struct DatabaseHandle {
+    pub pool: sqlx::SqlitePool,
+    pub tr: Option<Transaction<'static, sqlx::Sqlite>>,
+}
+
+#[derive(Resource, Debug)]
+pub struct AnyDatabaseResource {
+    min_key: i64,
+    db: Arc<RwLock<DatabaseHandle>>,
+} 
 
 impl Default for AnyDatabaseResource {
     fn default() -> Self {
         let pool= block_on(sqlx::SqlitePool::connect("sqlite::memory:")).unwrap();
-
-        AnyDatabaseResource {
+        let tr = Some(block_on(pool.begin()).unwrap());
+        let db = Arc::new(RwLock::new(DatabaseHandle{
             pool,
+            tr
+        }));
+        AnyDatabaseResource {
             min_key: 0,
+            db
         }
     }
 }
 
+unsafe impl Sync for DatabaseHandle {}
+unsafe impl Send for DatabaseHandle {}
+
+unsafe impl Sync for AnyDatabaseResource {}
+
 impl DatabaseResource for AnyDatabaseResource {
-    fn get_connection(&self) -> &sqlx::Pool<sqlx::Sqlite> {
-        &self.pool
-    }
-    fn get_transaction(&self) -> sqlx::Transaction<sqlx::Sqlite> {
-        block_on(self.pool.begin()).unwrap()
+    fn get_connection(&self) -> Arc<RwLock<DatabaseHandle>> {
+        self.db.clone()
     }
 
     // Rather than actually querying the database for key just hold on to the last key we had to issue
     // This is a bit of a hack but it's fine for now. As POC and only considering one machine
     // It is progressing into the negatives so that instantiating any objects with positive keys will not conflict
     fn get_key(&mut self) -> i64 {
-        self.min_key +=1;
+        self.min_key -=1;
         self.min_key
     }
 
 }
-
-

@@ -1,8 +1,8 @@
 
 use bevy_ecs::{component::Component, prelude::*};
-use bevy_erm::{add_event, DatabaseEntity, DatabaseEntityIndex, DatabaseQuery, DatabaseQueryInfo, DatabaseResource, AnyDatabaseResource};
+use bevy_erm::{add_event, AnyDatabaseResource, DatabaseEntity, DatabaseEntityIndex, DatabaseQuery, DatabaseQueryInfo, DatabaseResource, Persisted};
 use bevy_mod_index::prelude::*;
-use futures::{executor::block_on, StreamExt};
+use futures::{executor::block_on, stream::BoxStream, StreamExt};
 use async_trait::async_trait;
 use sqlx::{Encode, FromRow, Row};
 
@@ -12,12 +12,21 @@ pub struct Purchase {
     pub purchaser : DatabaseEntity,
 }
 
-#[derive(Component, Debug, Default, Clone, sqlx::FromRow)]
+#[derive(Component, Debug, Default, Clone)]
 struct MarketItem {
-    #[sqlx(flatten)]
     seller_id: DatabaseEntity,
     name: String,
     price: i32,
+}
+
+impl FromRow<'_, sqlx::sqlite::SqliteRow> for MarketItem {
+    fn from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Self, sqlx::Error> {
+        Ok(MarketItem {
+            seller_id: DatabaseEntity { id: row.try_get("seller_id")?, persisted: true.into()},
+            name: row.get("name"),
+            price: row.get("price"),
+        })
+    }
 }
 
 
@@ -32,12 +41,19 @@ struct Seller {}
 #[derive(Component, Debug, Default, Clone, sqlx::FromRow)]
 struct Buyer {}
 
-#[derive(Component, Debug, Default, Clone, sqlx::FromRow)]
+#[derive(Component, Debug, Default, Clone)]
 struct PurchasedItem {
-    #[sqlx(flatten)]
     item: DatabaseEntity,
-    #[sqlx(flatten)]
     buyer: DatabaseEntity,
+}
+
+impl FromRow<'_, sqlx::sqlite::SqliteRow> for PurchasedItem {
+    fn from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Self, sqlx::Error> {
+        Ok(PurchasedItem {
+            item: DatabaseEntity { id: row.try_get("item")?, persisted: true.into()},
+            buyer: DatabaseEntity { id: row.try_get("buyer")?, persisted: true.into()},
+        })
+    }
 }
 
 #[derive(Component, Debug, Default, Clone, sqlx::FromRow)]
@@ -80,7 +96,8 @@ impl DatabaseQueryInfo for ItemQuery {
 
     async fn insert_component<'c, E>(tr : E, db_entity: &DatabaseEntity, component: &Self::Component) -> Result<(), ()> 
     where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite> {
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite> 
+    {
         let r = sqlx::query("INSERT INTO items (id, seller_id, name, price) VALUES (?, ?, ?, ?)")
             .bind(db_entity.id)
             .bind(component.seller_id.id as i64)
@@ -94,7 +111,9 @@ impl DatabaseQueryInfo for ItemQuery {
         }
     }
 
-
+    fn table_name() -> Result<&'static str, ()> {
+        Ok("items")
+    }
 }
 
 struct PurchaseItemQuery {}
@@ -141,13 +160,19 @@ impl DatabaseQueryInfo for PurchaseItemQuery {
             Ok(_) => Ok(()),
             Err(_) => Err(()),
         }
-    }   
+    }
+
+
+    fn table_name() -> Result<&'static str, ()> {
+        Ok("purchased_items")
+    }  
+
 }   
 
 fn lookup_db_query_system(mut db_query: DatabaseQuery<ItemQuery>) {
     let db_entity = DatabaseEntity {
         id: 0,
-        persisted: true,
+        persisted: true.into(),
     };
     let age = db_query.get(&db_entity).unwrap();
     println!("age: {:?}", age);
@@ -168,7 +193,8 @@ fn purchase_system(mut events: EventReader<Purchase>, mut db_query_purchased: Da
 }
 
 fn populate_db(db: ResMut<AnyDatabaseResource>) {
-    let conn = db.get_connection();
+    let db_handle = db.get_connection();
+    let conn =&(*db_handle).write().unwrap().pool;
 
     block_on(async {
         // create the tables
@@ -194,51 +220,20 @@ fn index_lookup(mut index: Index<DatabaseEntityIndex>, query: Query<&mut MarketI
     println!("index entity: {:?}", val);
 }
 
-fn flush_to_db(
-    query: Query<(Entity, &DatabaseEntity, Option<&MarketItem>, Option<&PurchasedItem>)>, 
-    // db_query : DatabaseQuery<ItemQuery>,
-    purchased_query : DatabaseQuery<PurchaseItemQuery>
-    ) {
+fn flush_component_to_db<T: DatabaseQueryInfo>(query: Query<(&DatabaseEntity, &T::Component)>, db_query : DatabaseQuery<T>) {
+    let db_handle = db_query.db.get_connection();
+    let tr_option = &mut (*db_handle).write().unwrap().tr;
+    let tr = tr_option.as_mut().unwrap();
+    
     block_on(async {
         println!("flushing to db");
 
-        let mut transaction = purchased_query.db.get_connection().begin().await.unwrap();
-
-        println!("transaction started");
-        for (_, db_entity, market_item, purchased_item) in query.iter() {
-            // TODO
-            // if let Some(market_item) = market_item {
-            //     db_query.update_component(&mut *transaction, db_entity, &market_item).await.unwrap();
-            // }
-
-            if let Some(purchased_item) = purchased_item {
-                println!("purchased item: {:?}", purchased_item);
-                 purchased_query.update_component(&mut *transaction, db_entity, &purchased_item).await.unwrap();
-            }
+        for (db_entity, component) in query.iter() {
+            db_query.update_or_insert_component(&mut **tr, db_entity, component).await.unwrap();
         }
-
-        transaction.commit().await.unwrap();
-
-
     });
 
     println!("flushed to db");
-
-    block_on(async {
-      // read the market_item database table
-      let market_item = sqlx::query_as::<_, MarketItem>("SELECT * FROM items").bind(0).fetch(purchased_query.db.get_connection());
-      market_item.for_each(|item| async {
-          println!("item: {:?}", item.unwrap());
-      }).await;
-
-        // read the purchased_item database table
-        let purchased_item = sqlx::query_as::<_, PurchasedItem>("SELECT * FROM purchased_items").bind(0).fetch(purchased_query.db.get_connection());
-        purchased_item.for_each(|item| async {
-            println!("purchased item: {:?}", item.unwrap());
-        }).await;
-    });
-
-
 }
 
 async fn run() {
@@ -274,11 +269,14 @@ async fn run() {
         {
             let mut reader = IntoSystem::into_system(|db : ResMut<AnyDatabaseResource>, mut purchase_events : EventWriter<Purchase> |{
                 let conn = db.get_connection();
-                let purchaser = 0;
-                let seller = 1;
-                let item = 0;
+                let purchaser = 1;
+                let seller = 2;
+                let item = 3;
     
                 block_on( async {
+                    let db_handle = db.get_connection();
+                    let conn =&(*db_handle).write().unwrap().pool;
+
                     // populate one buyer and one seller
                     sqlx::query("INSERT INTO users (id, name, buyer, seller) VALUES (?, 'buyer', 1, 0)").bind(purchaser).execute(conn).await.unwrap();
                     sqlx::query("INSERT INTO users (id, name, buyer, seller) VALUES (?, 'seller', 0, 1)").bind(seller).execute(conn).await.unwrap();
@@ -292,11 +290,11 @@ async fn run() {
                 purchase_events.send(Purchase {
                     purchaser: DatabaseEntity {
                         id: purchaser,
-                        persisted: true,
+                        persisted: true.into(),
                     },
                     item: DatabaseEntity {
                         id: item,
-                        persisted: true,
+                        persisted: true.into(),
                     },
                 });
             });
@@ -340,11 +338,40 @@ async fn run() {
         }   
     
         let mut flush_to_db_schedule = Schedule::default();
-        flush_to_db_schedule.add_systems(flush_to_db);
+        flush_to_db_schedule.add_systems(flush_component_to_db::<ItemQuery>);
+        flush_to_db_schedule.add_systems(flush_component_to_db::<PurchaseItemQuery>);
         flush_to_db_schedule.run(&mut world);
+
+        let mut commit_schedule = Schedule::default();
+        commit_schedule.add_systems(|db : ResMut<AnyDatabaseResource>|{
+
+            block_on(async {
+                let db_handle = db.get_connection();
+                let tr_option = &mut (*db_handle).write().unwrap().tr;
+                let tr = tr_option.take().unwrap();
+                tr.commit().await.unwrap();
+            });
+        });
+        commit_schedule.run(&mut world);
     
     
         println!("done"); 
+
+
+        // See the updated data
+        {
+            let mut reader = IntoSystem::into_system(|db : ResMut<AnyDatabaseResource>|{
+                block_on( async {
+                    let db_handle = db.get_connection();
+                    let conn =&(*db_handle).write().unwrap().pool;
+                    let items = sqlx::query_as::<_, PurchasedItem>("SELECT * FROM purchased_items").fetch_all(conn).await.unwrap();
+                    println!("purchased_items: {:?}", items);
+                });
+            });
+
+            reader.initialize(&mut world);
+            reader.run((), &mut world);
+        }
     
 }
 
