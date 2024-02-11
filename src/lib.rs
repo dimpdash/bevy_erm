@@ -328,3 +328,21 @@ impl DatabaseResource for AnyDatabaseResource {
     }
 
 }
+
+
+
+pub fn flush_component_to_db<T: DatabaseQueryInfo>(query: Query<(&DatabaseEntity, &T::Component)>, db_query : DatabaseQuery<T>) {
+    let db_handle = db_query.db.get_connection();
+    let tr_option = &mut (*db_handle).write().unwrap().tr;
+    let tr = tr_option.as_mut().unwrap();
+    
+    block_on(async {
+        println!("flushing to db");
+
+        for (db_entity, component) in query.iter() {
+            db_query.update_or_insert_component(&mut **tr, db_entity, component).await.unwrap();
+        }
+    });
+
+    println!("flushed to db");
+}

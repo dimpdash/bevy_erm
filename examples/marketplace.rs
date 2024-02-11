@@ -1,6 +1,6 @@
 
 use bevy_ecs::{component::Component, prelude::*};
-use bevy_erm::{add_event, AnyDatabaseResource, DatabaseEntity, DatabaseEntityIndex, DatabaseQuery, DatabaseQueryInfo, DatabaseResource, Persisted};
+use bevy_erm::{add_event, flush_component_to_db, AnyDatabaseResource, DatabaseEntity, DatabaseEntityIndex, DatabaseQuery, DatabaseQueryInfo, DatabaseResource, Persisted};
 use bevy_mod_index::prelude::*;
 use futures::{executor::block_on, stream::BoxStream, StreamExt};
 use async_trait::async_trait;
@@ -220,21 +220,6 @@ fn index_lookup(mut index: Index<DatabaseEntityIndex>, query: Query<&mut MarketI
     println!("index entity: {:?}", val);
 }
 
-fn flush_component_to_db<T: DatabaseQueryInfo>(query: Query<(&DatabaseEntity, &T::Component)>, db_query : DatabaseQuery<T>) {
-    let db_handle = db_query.db.get_connection();
-    let tr_option = &mut (*db_handle).write().unwrap().tr;
-    let tr = tr_option.as_mut().unwrap();
-    
-    block_on(async {
-        println!("flushing to db");
-
-        for (db_entity, component) in query.iter() {
-            db_query.update_or_insert_component(&mut **tr, db_entity, component).await.unwrap();
-        }
-    });
-
-    println!("flushed to db");
-}
 
 async fn run() {
         // Create a new empty World to hold our Entities and Components
