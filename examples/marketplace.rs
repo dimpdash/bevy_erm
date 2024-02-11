@@ -14,6 +14,15 @@ pub struct Purchase {
     pub purchaser: DatabaseEntity,
 }
 
+/** 
+ * Creates a new item to sell
+ */
+#[derive(Event, Debug)]
+pub struct Sell {
+    pub item: DatabaseEntity,
+    pub seller: DatabaseEntity,
+}
+
 #[derive(Component, Debug, Default, Clone)]
 struct MarketItem {
     seller_id: DatabaseEntity,
@@ -245,6 +254,13 @@ fn populate_db(db: ResMut<AnyDatabaseResource>) {
     });
 }
 
+
+fn events_available<E: Event>(mut events: EventReader<E>) -> bool {
+    let not_empty = !events.is_empty();
+    events.clear(); // prevent old events from retriggering as weren't read
+    not_empty
+}
+
 async fn run() {
     // Create a new empty World to hold our Entities and Components
     let mut world = World::new();
@@ -265,7 +281,11 @@ async fn run() {
     // add the events
     let mut clear_events_schedule = Schedule::default();
     add_event::<Purchase>(&mut world);
+    add_event::<Sell>(&mut world);
+    
     clear_events_schedule.add_systems(bevy_ecs::event::event_update_system::<Purchase>);
+    clear_events_schedule.add_systems(bevy_ecs::event::event_update_system::<Sell>);    
+
 
     // Add our system to the schedule
     // schedule.add_systems(movement);
@@ -332,15 +352,17 @@ async fn run() {
 
     schedule.add_systems(purchase_system);
 
-    let mut reader = IntoSystem::into_system(|mut events: EventReader<Purchase>| -> bool {
-        let not_empty = !events.is_empty();
-        events.clear();
-        not_empty
-    });
+    let mut is_sell_events = IntoSystem::into_system(events_available::<Sell>);
+    let mut is_purchase_events = IntoSystem::into_system(events_available::<Purchase>);
 
-    reader.initialize(&mut world);
+    is_sell_events.initialize(&mut world);
+    is_purchase_events.initialize(&mut world);
 
-    let mut still_events_to_read = |world: &mut World| -> bool { reader.run((), world) };
+    let mut still_events_to_read = |world: &mut World| -> bool { 
+        is_sell_events.run((), world) ||
+        is_purchase_events.run((), world)
+    
+    };
 
     let mut count = 0;
     const MAX_COUNT: u32 = 3;
