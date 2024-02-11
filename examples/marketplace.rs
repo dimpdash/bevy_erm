@@ -1,8 +1,8 @@
-use bevy_ecs::{component::Component, event, prelude::*};
+use bevy_ecs::{component::Component, prelude::*};
 use bevy_erm::*;
 
 use async_trait::async_trait;
-use bevy_utils::petgraph::visit::Data;
+
 use futures::executor::block_on;
 use sqlx::{FromRow, Row};
 
@@ -87,7 +87,8 @@ struct ItemQuery {}
 impl ItemQuery {
     fn load_items_of_seller(
         seller: DatabaseEntity,
-    ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, MarketItem)>, ()> {
+    ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, MarketItem)>, ()>
+    {
         move |conn: &mut sqlx::SqliteConnection| {
             let items = block_on(
                 sqlx::query("SELECT id, seller_id, name, price FROM items WHERE seller_id = ?")
@@ -114,8 +115,8 @@ impl ItemQuery {
                             seller_id: DatabaseEntity {
                                 id: seller_id,
                                 persisted: true.into(),
-                            dirty: false,
-                        },
+                                dirty: false,
+                            },
                             name,
                             price,
                         },
@@ -359,7 +360,9 @@ async fn run() {
     // Fill the db with some data
     {
         let mut reader = IntoSystem::into_system(
-            |db: ResMut<AnyDatabaseResource>, mut purchase_events: EventWriter<Purchase>, mut get_seller_items: EventWriter<GetSellerItems> | {
+            |db: ResMut<AnyDatabaseResource>,
+             mut purchase_events: EventWriter<Purchase>,
+             mut get_seller_items: EventWriter<GetSellerItems>| {
                 let purchaser = 1;
                 let seller = 2;
                 let item = 3;
@@ -429,14 +432,17 @@ async fn run() {
 
     let mut is_sell_events = IntoSystem::into_system(events_available::<Sell>);
     let mut is_purchase_events = IntoSystem::into_system(events_available::<Purchase>);
-    let mut is_get_seller_items_events = IntoSystem::into_system(events_available::<GetSellerItems>);
+    let mut is_get_seller_items_events =
+        IntoSystem::into_system(events_available::<GetSellerItems>);
 
     is_sell_events.initialize(&mut world);
     is_purchase_events.initialize(&mut world);
     is_get_seller_items_events.initialize(&mut world);
 
     let mut still_events_to_read = |world: &mut World| -> bool {
-        is_sell_events.run((), world) || is_purchase_events.run((), world) || is_get_seller_items_events.run((), world)
+        is_sell_events.run((), world)
+            || is_purchase_events.run((), world)
+            || is_get_seller_items_events.run((), world)
     };
 
     let mut count = 0;
@@ -461,7 +467,7 @@ async fn run() {
 
     // loop until all events are empty
     while still_events_to_read(&mut world) && count < MAX_COUNT {
-        println!( "==== running iteration ====");
+        println!("==== running iteration ====");
         run_info_schedule.run(&mut world);
 
         schedule.run(&mut world);
@@ -469,7 +475,6 @@ async fn run() {
         // clear all the events as they should have been read by all the systems
         clear_events_schedule.run(&mut world);
         count += 1;
-
     }
     println!("===========================");
 

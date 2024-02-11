@@ -121,7 +121,9 @@ pub trait QueryFn<Component>:
 impl<'w, 's, I: DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
     pub fn load_entities_for_components(
         &mut self,
-        get_comp_from_db: impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, I::Component)>, ()>,
+        get_comp_from_db: impl FnOnce(
+            &mut sqlx::SqliteConnection,
+        ) -> Result<Vec<(DatabaseEntity, I::Component)>, ()>,
     ) -> Result<Vec<Entity>, ()> {
         // let conn = self.db.get_transaction();
         // using the database entity index
@@ -132,7 +134,7 @@ impl<'w, 's, I: DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
             let tr_option = &mut (*db_handle).write().unwrap().tr;
             let conn = tr_option.as_mut().unwrap();
 
-            get_comp_from_db(&mut **conn)?
+            get_comp_from_db(conn)?
         };
 
         let entities = components
@@ -145,7 +147,9 @@ impl<'w, 's, I: DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
 
     pub fn load_components(
         &mut self,
-        get_comp_from_db: impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, I::Component)>, ()>,
+        get_comp_from_db: impl FnOnce(
+            &mut sqlx::SqliteConnection,
+        ) -> Result<Vec<(DatabaseEntity, I::Component)>, ()>,
     ) -> Result<Vec<&'w I::Component>, ()> {
         Ok(self
             .load_entities_for_components(get_comp_from_db)?
@@ -156,7 +160,9 @@ impl<'w, 's, I: DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
 
     pub fn load_components_mut(
         &mut self,
-        get_comp_from_db: impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, I::Component)>, ()>,
+        get_comp_from_db: impl FnOnce(
+            &mut sqlx::SqliteConnection,
+        ) -> Result<Vec<(DatabaseEntity, I::Component)>, ()>,
     ) -> Result<Vec<Mut<I::Component>>, ()> {
         Ok(self
             .load_entities_for_components(get_comp_from_db)?
@@ -166,7 +172,9 @@ impl<'w, 's, I: DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
                 self.world
                     .get_entity(entity)
                     .unwrap()
-                    .get_mut::<DatabaseEntity>().unwrap().dirty = true;
+                    .get_mut::<DatabaseEntity>()
+                    .unwrap()
+                    .dirty = true;
 
                 self.world
                     .get_entity(entity)
@@ -259,10 +267,11 @@ impl<'w, 's, I: DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
         unsafe {
             // set entity to dirty
             self.world
-            .get_entity(entity)
-            .unwrap()
-            .get_mut::<DatabaseEntity>().unwrap().dirty = true;
-
+                .get_entity(entity)
+                .unwrap()
+                .get_mut::<DatabaseEntity>()
+                .unwrap()
+                .dirty = true;
 
             Ok(self
                 .world
