@@ -333,7 +333,9 @@ async fn run() {
     schedule.add_systems(purchase_system);
 
     let mut reader = IntoSystem::into_system(|mut events: EventReader<Purchase>| -> bool {
-        !events.is_empty()
+        let not_empty = !events.is_empty();
+        events.clear();
+        not_empty
     });
 
     reader.initialize(&mut world);
