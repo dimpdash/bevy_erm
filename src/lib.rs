@@ -60,6 +60,9 @@ pub struct DatabaseEntity {
     // updated
     #[sqlx(skip)]
     pub persisted: Persisted,
+
+    #[sqlx(skip)]
+    pub dirty: bool,
 }
 
 // stop type warning
@@ -159,6 +162,12 @@ impl<'w, 's, I: DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
             .load_entities_for_components(get_comp_from_db)?
             .into_iter()
             .map(|entity| unsafe {
+                // set entity to dirty
+                self.world
+                    .get_entity(entity)
+                    .unwrap()
+                    .get_mut::<DatabaseEntity>().unwrap().dirty = true;
+
                 self.world
                     .get_entity(entity)
                     .unwrap()
@@ -227,6 +236,7 @@ impl<'w, 's, I: DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
                             DatabaseEntity {
                                 id: db_entity.id,
                                 persisted: true.into(),
+                                dirty: false,
                             },
                             component,
                         ))
@@ -249,6 +259,13 @@ impl<'w, 's, I: DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
         let entity = self.get_internal(db_entity, None);
 
         unsafe {
+            // set entity to dirty
+            self.world
+            .get_entity(entity)
+            .unwrap()
+            .get_mut::<DatabaseEntity>().unwrap().dirty = true;
+
+
             Ok(self
                 .world
                 .get_entity(entity)
@@ -268,7 +285,9 @@ impl<'w, 's, I: DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         if db_entity.persisted.into() {
-            self.update_component(tr, db_entity, component).await?;
+            if db_entity.dirty {
+                self.update_component(tr, db_entity, component).await?;
+            }
         } else {
             self.insert_component(tr, db_entity, component).await?;
         }
@@ -296,6 +315,7 @@ impl<'w, 's, I: DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
                 DatabaseEntity {
                     id: self.db.get_key(),
                     persisted: false.into(),
+                    dirty: false,
                 },
             ));
         }

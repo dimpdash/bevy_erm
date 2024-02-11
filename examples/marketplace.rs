@@ -39,6 +39,7 @@ impl FromRow<'_, sqlx::sqlite::SqliteRow> for MarketItem {
             seller_id: DatabaseEntity {
                 id: row.try_get("seller_id")?,
                 persisted: true.into(),
+                dirty: false,
             },
             name: row.get("name"),
             price: row.get("price"),
@@ -70,10 +71,12 @@ impl FromRow<'_, sqlx::sqlite::SqliteRow> for PurchasedItem {
             item: DatabaseEntity {
                 id: row.try_get("item")?,
                 persisted: true.into(),
+                dirty: false,
             },
             buyer: DatabaseEntity {
                 id: row.try_get("buyer")?,
                 persisted: true.into(),
+                dirty: false,
             },
         })
     }
@@ -105,12 +108,14 @@ impl ItemQuery {
                         DatabaseEntity {
                             id,
                             persisted: true.into(),
+                            dirty: false,
                         },
                         MarketItem {
                             seller_id: DatabaseEntity {
                                 id: seller_id,
                                 persisted: true.into(),
-                            },
+                            dirty: false,
+                        },
                             name,
                             price,
                         },
@@ -396,10 +401,12 @@ async fn run() {
                     purchaser: DatabaseEntity {
                         id: purchaser,
                         persisted: true.into(),
+                        dirty: false,
                     },
                     item: DatabaseEntity {
                         id: item,
                         persisted: true.into(),
+                        dirty: false,
                     },
                 });
 
@@ -407,6 +414,7 @@ async fn run() {
                     seller: DatabaseEntity {
                         id: seller,
                         persisted: true.into(),
+                        dirty: false,
                     },
                 });
             },
@@ -440,9 +448,20 @@ async fn run() {
             println!("processing event: {:?}", event);
         }
     });
+    run_info_schedule.add_systems(|mut events: EventReader<Sell>| {
+        for event in events.read() {
+            println!("processing event: {:?}", event);
+        }
+    });
+    run_info_schedule.add_systems(|mut events: EventReader<GetSellerItems>| {
+        for event in events.read() {
+            println!("processing event: {:?}", event);
+        }
+    });
 
     // loop until all events are empty
     while still_events_to_read(&mut world) && count < MAX_COUNT {
+        println!( "==== running iteration ====");
         run_info_schedule.run(&mut world);
 
         schedule.run(&mut world);
@@ -450,7 +469,9 @@ async fn run() {
         // clear all the events as they should have been read by all the systems
         clear_events_schedule.run(&mut world);
         count += 1;
+
     }
+    println!("===========================");
 
     let mut flush_to_db_schedule = Schedule::default();
     flush_to_db_schedule.add_systems(flush_component_to_db::<ItemQuery>);
