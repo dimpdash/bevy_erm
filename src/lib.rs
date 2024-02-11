@@ -223,8 +223,6 @@ impl<'w, 's, I: DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
             }
             // Entity not found in world
             None => {
-                println!("entity not found in world for db_entity: {:?}", db_entity);
-
                 let component = match component_preloaded {
                     Some(component) => component,
                     None => I::get_component(&mut **conn, db_entity).unwrap(),
