@@ -56,12 +56,6 @@ impl FromRow<'_, sqlx::sqlite::SqliteRow> for PurchasedItem {
     }
 }
 
-#[derive(Component, Debug, Default, Clone, sqlx::FromRow)]
-struct TestComponent {
-    age: u32,
-
-}
-
 struct ItemQuery {}
 #[async_trait]
 impl DatabaseQueryInfo for ItemQuery {
@@ -169,15 +163,6 @@ impl DatabaseQueryInfo for PurchaseItemQuery {
 
 }   
 
-fn lookup_db_query_system(mut db_query: DatabaseQuery<ItemQuery>) {
-    let db_entity = DatabaseEntity {
-        id: 0,
-        persisted: true.into(),
-    };
-    let age = db_query.get(&db_entity).unwrap();
-    println!("age: {:?}", age);
-}
-
 fn purchase_system(mut events: EventReader<Purchase>, mut db_query_purchased: DatabaseQuery<PurchaseItemQuery>) {
     println!("purchase system");
     for event in events.read() {
@@ -213,13 +198,6 @@ fn populate_db(db: ResMut<AnyDatabaseResource>) {
    
 }
 
-fn index_lookup(mut index: Index<DatabaseEntityIndex>, query: Query<&mut MarketItem>) {
-    let entity_set = index.lookup(&0);
-    let entity = *entity_set.iter().next().unwrap();
-    let val = query.get(entity).unwrap();
-    println!("index entity: {:?}", val);
-}
-
 
 async fn run() {
         // Create a new empty World to hold our Entities and Components
@@ -253,7 +231,6 @@ async fn run() {
         // Fill the db with some data
         {
             let mut reader = IntoSystem::into_system(|db : ResMut<AnyDatabaseResource>, mut purchase_events : EventWriter<Purchase> |{
-                let conn = db.get_connection();
                 let purchaser = 1;
                 let seller = 2;
                 let item = 3;
@@ -288,11 +265,6 @@ async fn run() {
             reader.run((), &mut world);
         }
 
-    
-        // schedule.add_systems(increment_age_system.before(lookup_db_query_system));
-        // schedule.add_systems(lookup_db_query_system);
-        // schedule.add_systems(index_lookup.after(increment_age_system));
-        // schedule.add_systems(do_nothing);
         schedule.add_systems(purchase_system);
     
     

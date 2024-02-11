@@ -227,9 +227,6 @@ unsafe impl<'w, 's, I:DatabaseQueryInfo> SystemParam for DatabaseQuery<'w, 's, I
             world.init_resource::<AnyDatabaseResource>();
         }
 
-        let index_state = <Index<DatabaseEntityIndex> as SystemParam>::init_state(world, system_meta);
-
-
         DatabaseQueryFetchState {
             db_state: <ResMut<'w, I::Database>>::init_state(world, system_meta),
             phantom: std::marker::PhantomData,
@@ -271,20 +268,11 @@ pub trait DatabaseResource: Resource + Default {
     fn get_key(&mut self) -> i64;
 }
 
-pub struct AnyDatabaseResource2 {
-    a: &'static mut i64,
-}
-
-impl AnyDatabaseResource2 {
-    fn get_a2(&'static mut self) -> &'static mut i64 {
-       &mut self.a
-    }
-}
-
-
 #[derive(Debug)]
 pub struct DatabaseHandle {
     pub pool: sqlx::SqlitePool,
+    // Currently on handle one transaction at a time
+    // IMPROVEMNET: Use a vec of transactions to allow for multiple transactions at once
     pub tr: Option<Transaction<'static, sqlx::Sqlite>>,
 }
 
