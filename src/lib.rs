@@ -110,8 +110,69 @@ pub struct DatabaseQuery<'w, 's, I: DatabaseQueryInfo + 'static> {
 
 // pub type RODatabaseQueryItem<'a, I> = &'a I::Component;
 
+pub trait QueryFn<Component>:
+    FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, Component)>, ()>
+{
+}
+
 impl<'w, 's, I: DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
-    fn get_internal(&mut self, db_entity: &DatabaseEntity) -> Entity {
+    pub fn load_entities_for_components(
+        &mut self,
+        get_comp_from_db: impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, I::Component)>, ()>,
+    ) -> Result<Vec<Entity>, ()> {
+        // let conn = self.db.get_transaction();
+        // using the database entity index
+        // fetch from resource
+
+        let components = {
+            let db_handle = self.db.get_connection();
+            let tr_option = &mut (*db_handle).write().unwrap().tr;
+            let conn = tr_option.as_mut().unwrap();
+
+            get_comp_from_db(&mut **conn)?
+        };
+
+        let entities = components
+            .into_iter()
+            .map(|(db_entity, component)| self.get_internal(&db_entity, Some(component)))
+            .collect::<Vec<Entity>>();
+
+        Ok(entities)
+    }
+
+    pub fn load_components(
+        &mut self,
+        get_comp_from_db: impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, I::Component)>, ()>,
+    ) -> Result<Vec<&'w I::Component>, ()> {
+        Ok(self
+            .load_entities_for_components(get_comp_from_db)?
+            .into_iter()
+            .map(|entity| unsafe { self.world.world().get::<I::Component>(entity).unwrap() })
+            .collect())
+    }
+
+    pub fn load_components_mut(
+        &mut self,
+        get_comp_from_db: impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, I::Component)>, ()>,
+    ) -> Result<Vec<Mut<I::Component>>, ()> {
+        Ok(self
+            .load_entities_for_components(get_comp_from_db)?
+            .into_iter()
+            .map(|entity| unsafe {
+                self.world
+                    .get_entity(entity)
+                    .unwrap()
+                    .get_mut::<I::Component>()
+                    .unwrap()
+            })
+            .collect())
+    }
+
+    fn get_internal(
+        &mut self,
+        db_entity: &DatabaseEntity,
+        component_preloaded: Option<I::Component>,
+    ) -> Entity {
         // let conn = self.db.get_transaction();
         // using the database entity index
         // fetch from resource
@@ -138,7 +199,10 @@ impl<'w, 's, I: DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
                     Some(_) => *entity,
                     // Entity does not have the desired component (Load from database)
                     None => {
-                        let db_component = I::get_component(&mut **conn, db_entity).unwrap();
+                        let db_component = match component_preloaded {
+                            Some(component) => component,
+                            None => I::get_component(&mut **conn, db_entity).unwrap(),
+                        };
                         // write the component to the entity
                         unsafe {
                             let w = self.world.world_mut();
@@ -152,7 +216,10 @@ impl<'w, 's, I: DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
             None => {
                 println!("entity not found in world for db_entity: {:?}", db_entity);
 
-                let component = I::get_component(&mut **conn, db_entity).unwrap();
+                let component = match component_preloaded {
+                    Some(component) => component,
+                    None => I::get_component(&mut **conn, db_entity).unwrap(),
+                };
                 unsafe {
                     let w = self.world.world_mut();
                     let entity = w
@@ -172,14 +239,14 @@ impl<'w, 's, I: DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
 
     pub fn get(&mut self, db_entity: &DatabaseEntity) -> Result<&I::Component, ()> {
         println!("getting component");
-        let entity = self.get_internal(db_entity);
+        let entity = self.get_internal(db_entity, None);
 
         unsafe { Ok(self.world.world().get::<I::Component>(entity).unwrap()) }
     }
 
     pub fn get_mut(&mut self, db_entity: &DatabaseEntity) -> Result<Mut<I::Component>, ()> {
         println!("getting mut component");
-        let entity = self.get_internal(db_entity);
+        let entity = self.get_internal(db_entity, None);
 
         unsafe {
             Ok(self
@@ -355,6 +422,8 @@ pub fn flush_component_to_db<T: DatabaseQueryInfo>(
 
     block_on(async {
         for (db_entity, component) in query.iter() {
+            println!("flushing component to db");
+            println!("db_entity: {:?}, component {:?}", db_entity, component);
             db_query
                 .update_or_insert_component(&mut **tr, db_entity, component)
                 .await

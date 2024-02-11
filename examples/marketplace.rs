@@ -1,10 +1,8 @@
 use bevy_ecs::{component::Component, event, prelude::*};
-use bevy_erm::{
-    add_event, flush_component_to_db, AnyDatabaseResource, DatabaseEntity, DatabaseEntityIndex,
-    DatabaseQuery, DatabaseQueryInfo, DatabaseResource,
-};
+use bevy_erm::*;
 
 use async_trait::async_trait;
+use bevy_utils::petgraph::visit::Data;
 use futures::executor::block_on;
 use sqlx::{FromRow, Row};
 
@@ -14,12 +12,17 @@ pub struct Purchase {
     pub purchaser: DatabaseEntity,
 }
 
-/** 
+/**
  * Creates a new item to sell
  */
 #[derive(Event, Debug)]
 pub struct Sell {
     pub item: DatabaseEntity,
+    pub seller: DatabaseEntity,
+}
+
+#[derive(Event, Debug)]
+pub struct GetSellerItems {
     pub seller: DatabaseEntity,
 }
 
@@ -77,6 +80,49 @@ impl FromRow<'_, sqlx::sqlite::SqliteRow> for PurchasedItem {
 }
 
 struct ItemQuery {}
+
+impl ItemQuery {
+    fn load_items_of_seller(
+        seller: DatabaseEntity,
+    ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, MarketItem)>, ()> {
+        move |conn: &mut sqlx::SqliteConnection| {
+            let items = block_on(
+                sqlx::query("SELECT id, seller_id, name, price FROM items WHERE seller_id = ?")
+                    .bind(seller.id)
+                    .fetch_all(conn),
+            )
+            .unwrap();
+
+            let items = items
+                .into_iter()
+                .map(|row| {
+                    let id = row.get("id");
+                    let seller_id = row.get("seller_id");
+                    let name = row.get("name");
+                    let price = row.get("price");
+
+                    (
+                        DatabaseEntity {
+                            id,
+                            persisted: true.into(),
+                        },
+                        MarketItem {
+                            seller_id: DatabaseEntity {
+                                id: seller_id,
+                                persisted: true.into(),
+                            },
+                            name,
+                            price,
+                        },
+                    )
+                })
+                .collect();
+
+            Ok(items)
+        }
+    }
+}
+
 #[async_trait]
 impl DatabaseQueryInfo for ItemQuery {
     type Component = MarketItem;
@@ -104,7 +150,7 @@ impl DatabaseQueryInfo for ItemQuery {
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
-        let r = sqlx::query("UPDATE items SET seller_id = ?, name = ?, price WHERE id = ?")
+        let r = sqlx::query("UPDATE items SET seller_id = ?, name = ?, price = ? WHERE id = ?")
             .bind(component.seller_id.id)
             .bind(component.name.clone())
             .bind(component.price)
@@ -210,6 +256,18 @@ impl DatabaseQueryInfo for PurchaseItemQuery {
     }
 }
 
+fn get_seller_items(
+    mut events: EventReader<GetSellerItems>,
+    mut db_query: DatabaseQuery<ItemQuery>,
+) {
+    println!("get seller items system");
+    for event in events.read() {
+        let seller = event.seller;
+        let items = db_query.load_components(ItemQuery::load_items_of_seller(seller));
+        println!("seller items: {:?}", items);
+    }
+}
+
 fn purchase_system(
     mut events: EventReader<Purchase>,
     mut db_query_purchased: DatabaseQuery<PurchaseItemQuery>,
@@ -254,7 +312,6 @@ fn populate_db(db: ResMut<AnyDatabaseResource>) {
     });
 }
 
-
 fn events_available<E: Event>(mut events: EventReader<E>) -> bool {
     let not_empty = !events.is_empty();
     events.clear(); // prevent old events from retriggering as weren't read
@@ -282,10 +339,11 @@ async fn run() {
     let mut clear_events_schedule = Schedule::default();
     add_event::<Purchase>(&mut world);
     add_event::<Sell>(&mut world);
-    
-    clear_events_schedule.add_systems(bevy_ecs::event::event_update_system::<Purchase>);
-    clear_events_schedule.add_systems(bevy_ecs::event::event_update_system::<Sell>);    
+    add_event::<GetSellerItems>(&mut world);
 
+    clear_events_schedule.add_systems(bevy_ecs::event::event_update_system::<Purchase>);
+    clear_events_schedule.add_systems(bevy_ecs::event::event_update_system::<Sell>);
+    clear_events_schedule.add_systems(bevy_ecs::event::event_update_system::<GetSellerItems>);
 
     // Add our system to the schedule
     // schedule.add_systems(movement);
@@ -296,7 +354,7 @@ async fn run() {
     // Fill the db with some data
     {
         let mut reader = IntoSystem::into_system(
-            |db: ResMut<AnyDatabaseResource>, mut purchase_events: EventWriter<Purchase>| {
+            |db: ResMut<AnyDatabaseResource>, mut purchase_events: EventWriter<Purchase>, mut get_seller_items: EventWriter<GetSellerItems> | {
                 let purchaser = 1;
                 let seller = 2;
                 let item = 3;
@@ -323,9 +381,10 @@ async fn run() {
 
                     // add one item to the market
                     sqlx::query(
-                        "INSERT INTO items (seller_id, name, price) VALUES (?, 'corn', 100)",
+                        "INSERT INTO items (id, seller_id, name, price) VALUES (?, ?, 'corn', 100)",
                     )
                     .bind(item)
+                    .bind(seller)
                     .execute(conn)
                     .await
                     .unwrap();
@@ -343,6 +402,13 @@ async fn run() {
                         persisted: true.into(),
                     },
                 });
+
+                get_seller_items.send(GetSellerItems {
+                    seller: DatabaseEntity {
+                        id: seller,
+                        persisted: true.into(),
+                    },
+                });
             },
         );
 
@@ -351,17 +417,18 @@ async fn run() {
     }
 
     schedule.add_systems(purchase_system);
+    schedule.add_systems(get_seller_items);
 
     let mut is_sell_events = IntoSystem::into_system(events_available::<Sell>);
     let mut is_purchase_events = IntoSystem::into_system(events_available::<Purchase>);
+    let mut is_get_seller_items_events = IntoSystem::into_system(events_available::<GetSellerItems>);
 
     is_sell_events.initialize(&mut world);
     is_purchase_events.initialize(&mut world);
+    is_get_seller_items_events.initialize(&mut world);
 
-    let mut still_events_to_read = |world: &mut World| -> bool { 
-        is_sell_events.run((), world) ||
-        is_purchase_events.run((), world)
-    
+    let mut still_events_to_read = |world: &mut World| -> bool {
+        is_sell_events.run((), world) || is_purchase_events.run((), world) || is_get_seller_items_events.run((), world)
     };
 
     let mut count = 0;
@@ -389,8 +456,6 @@ async fn run() {
     flush_to_db_schedule.add_systems(flush_component_to_db::<ItemQuery>);
     flush_to_db_schedule.add_systems(flush_component_to_db::<PurchaseItemQuery>);
     flush_to_db_schedule.run(&mut world);
-
-
 
     let mut commit_schedule = Schedule::default();
     commit_schedule.add_systems(|db: ResMut<AnyDatabaseResource>| {
