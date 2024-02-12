@@ -191,9 +191,20 @@ impl DatabaseQueryInfo for ItemQuery {
         }
     }
 
-    fn table_name() -> Result<&'static str, ()> {
-        Ok("items")
+    async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntity) -> Result<(), ()>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+    {
+        let r = sqlx::query("DELETE FROM items WHERE id = ?")
+            .bind(db_entity.id)
+            .execute(tr)
+            .await;
+        match r {
+            Ok(_) => Ok(()),
+            Err(_) => Err(()),
+        }
     }
+
 }
 
 struct PurchaseItemQuery {}
@@ -257,8 +268,18 @@ impl DatabaseQueryInfo for PurchaseItemQuery {
         }
     }
 
-    fn table_name() -> Result<&'static str, ()> {
-        Ok("purchased_items")
+    async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntity) -> Result<(), ()>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+    {
+        let r = sqlx::query("DELETE FROM purchased_items WHERE id = ?")
+            .bind(db_entity.id)
+            .execute(tr)
+            .await;
+        match r {
+            Ok(_) => Ok(()),
+            Err(_) => Err(()),
+        }
     }
 }
 
