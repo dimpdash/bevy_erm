@@ -100,7 +100,6 @@ pub trait DatabaseQueryInfo: Sized {
     async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntity) -> Result<(), ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>;
-
 }
 
 pub struct DatabaseQueryFetchState<'w, 's, I: DatabaseQueryInfo + 'static> {
@@ -344,8 +343,7 @@ impl<'w, 's, I: DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
         Ok(())
     }
 
-    pub async fn delete_component<'c, E>(&self, db_entity: &DatabaseEntity) -> Result<(), ()>
-    {
+    pub async fn delete_component<'c, E>(&self, db_entity: &DatabaseEntity) -> Result<(), ()> {
         let db_handle = self.db.get_connection();
         let tr_option = &mut (*db_handle).write().unwrap().tr;
         let tr = tr_option.as_mut().unwrap();

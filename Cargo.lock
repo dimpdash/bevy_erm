@@ -286,6 +286,7 @@ dependencies = [
  "anyhow",
  "async-channel",
  "async-trait",
+ "bevy_app",
  "bevy_ecs",
  "bevy_ecs_macros",
  "bevy_mod_index",

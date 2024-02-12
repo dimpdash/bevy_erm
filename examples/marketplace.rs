@@ -1,8 +1,9 @@
-use bevy_ecs::{component::Component, prelude::*};
+use bevy_ecs::{component::Component, prelude::*, schedule};
 use bevy_erm::*;
 
 use async_trait::async_trait;
 
+use bevy_app::prelude::*;
 use futures::executor::block_on;
 use sqlx::{FromRow, Row};
 
@@ -204,7 +205,6 @@ impl DatabaseQueryInfo for ItemQuery {
             Err(_) => Err(()),
         }
     }
-
 }
 
 struct PurchaseItemQuery {}
@@ -311,7 +311,7 @@ fn purchase_system(
     }
 }
 
-fn populate_db(db: ResMut<AnyDatabaseResource>) {
+fn create_tables(db: ResMut<AnyDatabaseResource>) {
     let db_handle = db.get_connection();
     let conn = &(*db_handle).write().unwrap().pool;
 
@@ -336,6 +336,27 @@ fn populate_db(db: ResMut<AnyDatabaseResource>) {
         .execute(conn)
         .await
         .unwrap();
+
+
+        // populate one buyer and one seller
+        sqlx::query("INSERT INTO users (id, name, buyer, seller) VALUES (?, 'buyer', 1, 0)")
+            .bind(PURCHASER_ID)
+            .execute(conn)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO users (id, name, buyer, seller) VALUES (?, 'seller', 0, 1)")
+            .bind(SELLER_ID)
+            .execute(conn)
+            .await
+            .unwrap();
+
+        // add one item to the market
+        sqlx::query("INSERT INTO items (id, seller_id, name, price) VALUES (?, ?, 'corn', 100)")
+            .bind(MARKET_ITEM_ID)
+            .bind(SELLER_ID)
+            .execute(conn)
+            .await
+            .unwrap();
     });
 }
 
@@ -345,120 +366,63 @@ fn events_available<E: Event>(mut events: EventReader<E>) -> bool {
     not_empty
 }
 
-async fn run() {
-    // Create a new empty World to hold our Entities and Components
-    let mut world = World::new();
+const PURCHASER_ID: i64 = 1;
+const SELLER_ID: i64 = 2;
+const MARKET_ITEM_ID: i64 = 3;
 
-    world.init_component::<MarketItem>();
-    world.init_component::<User>();
-    world.init_component::<Seller>();
-    world.init_component::<Buyer>();
-    world.init_component::<PurchasedItem>();
+pub struct MarketplacePlugin;
 
-    if !world.contains_resource::<AnyDatabaseResource>() {
-        world.init_resource::<AnyDatabaseResource>();
+impl Plugin for MarketplacePlugin {
+    fn build(&self, app: &mut App) {
+        app.add_event::<Purchase>()
+            .add_event::<Sell>()
+            .add_event::<GetSellerItems>()
+            .init_resource::<AnyDatabaseResource>()
+            .add_systems(Startup, create_tables)
+            .add_systems(Update, purchase_system)
+            .add_systems(Update, get_seller_items);
     }
+}
 
-    // Create a new Schedule, which defines an execution strategy for Systems
-    let mut schedule = Schedule::default();
+fn preload_events(mut purchase_events: EventWriter<Purchase>,
+    mut get_seller_items: EventWriter<GetSellerItems>) {
 
-    // add the events
-    let mut clear_events_schedule = Schedule::default();
-    add_event::<Purchase>(&mut world);
-    add_event::<Sell>(&mut world);
-    add_event::<GetSellerItems>(&mut world);
-
-    clear_events_schedule.add_systems(bevy_ecs::event::event_update_system::<Purchase>);
-    clear_events_schedule.add_systems(bevy_ecs::event::event_update_system::<Sell>);
-    clear_events_schedule.add_systems(bevy_ecs::event::event_update_system::<GetSellerItems>);
-
-    // Add our system to the schedule
-    // schedule.add_systems(movement);
-    let mut startup_schedule = Schedule::default();
-    startup_schedule.add_systems(populate_db);
-    startup_schedule.run(&mut world);
-
-    // Fill the db with some data
-    {
-        let mut reader = IntoSystem::into_system(
-            |db: ResMut<AnyDatabaseResource>,
-             mut purchase_events: EventWriter<Purchase>,
-             mut get_seller_items: EventWriter<GetSellerItems>| {
-                let purchaser = 1;
-                let seller = 2;
-                let item = 3;
-
-                block_on(async {
-                    let db_handle = db.get_connection();
-                    let conn = &(*db_handle).write().unwrap().pool;
-
-                    // populate one buyer and one seller
-                    sqlx::query(
-                        "INSERT INTO users (id, name, buyer, seller) VALUES (?, 'buyer', 1, 0)",
-                    )
-                    .bind(purchaser)
-                    .execute(conn)
-                    .await
-                    .unwrap();
-                    sqlx::query(
-                        "INSERT INTO users (id, name, buyer, seller) VALUES (?, 'seller', 0, 1)",
-                    )
-                    .bind(seller)
-                    .execute(conn)
-                    .await
-                    .unwrap();
-
-                    // add one item to the market
-                    sqlx::query(
-                        "INSERT INTO items (id, seller_id, name, price) VALUES (?, ?, 'corn', 100)",
-                    )
-                    .bind(item)
-                    .bind(seller)
-                    .execute(conn)
-                    .await
-                    .unwrap();
-                });
-
-                // add the triggering purchase event
-
-                purchase_events.send(Purchase {
-                    purchaser: DatabaseEntity {
-                        id: purchaser,
-                        persisted: true.into(),
-                        dirty: false,
-                    },
-                    item: DatabaseEntity {
-                        id: item,
-                        persisted: true.into(),
-                        dirty: false,
-                    },
-                });
-
-                get_seller_items.send(GetSellerItems {
-                    seller: DatabaseEntity {
-                        id: seller,
-                        persisted: true.into(),
-                        dirty: false,
-                    },
-                });
+        // add the triggering purchase event
+        purchase_events.send(Purchase {
+            purchaser: DatabaseEntity {
+                id: PURCHASER_ID,
+                persisted: true.into(),
+                dirty: false,
             },
-        );
+            item: DatabaseEntity {
+                id: MARKET_ITEM_ID,
+                persisted: true.into(),
+                dirty: false,
+            },
+        });
+    
+        get_seller_items.send(GetSellerItems {
+            seller: DatabaseEntity {
+                id: SELLER_ID,
+                persisted: true.into(),
+                dirty: false,
+            },
+        });
+}
 
-        reader.initialize(&mut world);
-        reader.run((), &mut world);
-    }
-
-    schedule.add_systems(purchase_system);
-    schedule.add_systems(get_seller_items);
+fn runner(mut app: App) {
+    let mut schedule = schedule::Schedule::default();
+    schedule.add_systems(preload_events);
+    schedule.run(&mut app.world);
 
     let mut is_sell_events = IntoSystem::into_system(events_available::<Sell>);
     let mut is_purchase_events = IntoSystem::into_system(events_available::<Purchase>);
     let mut is_get_seller_items_events =
         IntoSystem::into_system(events_available::<GetSellerItems>);
 
-    is_sell_events.initialize(&mut world);
-    is_purchase_events.initialize(&mut world);
-    is_get_seller_items_events.initialize(&mut world);
+    is_sell_events.initialize(&mut app.world);
+    is_purchase_events.initialize(&mut app.world);
+    is_get_seller_items_events.initialize(&mut app.world);
 
     let mut still_events_to_read = |world: &mut World| -> bool {
         is_sell_events.run((), world)
@@ -466,43 +430,16 @@ async fn run() {
             || is_get_seller_items_events.run((), world)
     };
 
-    let mut count = 0;
-    const MAX_COUNT: u32 = 3;
-
-    let mut run_info_schedule = Schedule::default();
-    run_info_schedule.add_systems(|mut events: EventReader<Purchase>| {
-        for event in events.read() {
-            println!("processing event: {:?}", event);
-        }
-    });
-    run_info_schedule.add_systems(|mut events: EventReader<Sell>| {
-        for event in events.read() {
-            println!("processing event: {:?}", event);
-        }
-    });
-    run_info_schedule.add_systems(|mut events: EventReader<GetSellerItems>| {
-        for event in events.read() {
-            println!("processing event: {:?}", event);
-        }
-    });
-
-    // loop until all events are empty
-    while still_events_to_read(&mut world) && count < MAX_COUNT {
+    while still_events_to_read(&mut app.world) {
         println!("==== running iteration ====");
-        run_info_schedule.run(&mut world);
-
-        schedule.run(&mut world);
-
-        // clear all the events as they should have been read by all the systems
-        clear_events_schedule.run(&mut world);
-        count += 1;
+        app.update();
     }
     println!("===========================");
 
     let mut flush_to_db_schedule = Schedule::default();
     flush_to_db_schedule.add_systems(flush_component_to_db::<ItemQuery>);
     flush_to_db_schedule.add_systems(flush_component_to_db::<PurchaseItemQuery>);
-    flush_to_db_schedule.run(&mut world);
+    flush_to_db_schedule.run(&mut app.world);
 
     let mut commit_schedule = Schedule::default();
     commit_schedule.add_systems(|db: ResMut<AnyDatabaseResource>| {
@@ -513,7 +450,7 @@ async fn run() {
             tr.commit().await.unwrap();
         });
     });
-    commit_schedule.run(&mut world);
+    commit_schedule.run(&mut app.world);
 
     println!("done");
 
@@ -531,12 +468,15 @@ async fn run() {
             });
         });
 
-        reader.initialize(&mut world);
-        reader.run((), &mut world);
+        reader.initialize(&mut app.world);
+        reader.run((), &mut app.world);
     }
 }
 
 #[tokio::main]
 async fn main() {
-    run().await;
+    App::new()
+        .set_runner(runner)
+        .add_plugins(MarketplacePlugin)
+        .run();
 }
