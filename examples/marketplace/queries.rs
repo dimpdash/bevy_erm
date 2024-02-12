@@ -9,7 +9,7 @@ use crate::components::*;
 
 pub struct BuyerQuery {}
 impl BuyerQuery {
-    fn load_all() -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, Buyer)>, ()>
+    pub fn load_all() -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, Buyer)>, ()>
     {
         move |conn: &mut sqlx::SqliteConnection| {
             let buyers = block_on(sqlx::query("SELECT id FROM users WHERE buyer = 1").fetch_all(conn)).unwrap();
@@ -467,7 +467,7 @@ impl DatabaseQueryInfo for ItemQuery {
 pub struct PurchaseItemQuery {}
 
 impl PurchaseItemQuery {
-    fn load_all() -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, PurchasedItem)>, ()>
+    pub fn load_all() -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, PurchasedItem)>, ()>
     {
         move |conn: &mut sqlx::SqliteConnection| {
             let items = block_on(

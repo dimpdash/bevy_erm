@@ -1,12 +1,6 @@
-use bevy_ecs::{component::Component, prelude::*, schedule};
+use bevy_ecs::component::Component;
 use bevy_erm::*;
-use async_trait::async_trait;
-
-
-use bevy_app::prelude::*;
-use futures::executor::block_on;
 use sqlx::{FromRow, Row};
-
 
 #[derive(Component, Debug, Default, Clone, sqlx::FromRow)]
 pub struct User {

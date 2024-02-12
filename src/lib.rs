@@ -160,6 +160,25 @@ impl<'w, 's, I: DatabaseQueryInfo> DatabaseQuery<'w, 's, I> {
             .collect())
     }
 
+    pub fn load_components_and_entity(
+        &mut self,
+        get_comp_from_db: impl FnOnce(
+            &mut sqlx::SqliteConnection,
+        ) -> Result<Vec<(DatabaseEntity, I::Component)>, ()>,
+    ) -> Result<Vec<(Entity, &'w I::Component)>, ()> {
+        Ok(self
+            .load_entities_for_components(get_comp_from_db)?
+            .into_iter()
+            .map(|entity| {
+                (
+                    entity,
+                    unsafe { self.world.world().get::<I::Component>(entity).unwrap() },
+                )
+            })
+            .collect())
+    }
+
+
     pub fn load_components_mut(
         &mut self,
         get_comp_from_db: impl FnOnce(
