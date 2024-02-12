@@ -460,8 +460,6 @@ pub fn flush_component_to_db<T: DatabaseQueryInfo>(
 
     block_on(async {
         for (db_entity, component) in query.iter() {
-            println!("flushing component to db");
-            println!("db_entity: {:?}, component {:?}", db_entity, component);
             db_query
                 .update_or_insert_component(&mut **tr, db_entity, component)
                 .await
