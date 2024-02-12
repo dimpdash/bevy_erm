@@ -583,3 +583,4 @@ impl DatabaseQueryInfo for PurchaseItemQuery {
         }
     }
 }
+

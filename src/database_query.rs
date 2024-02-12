@@ -356,3 +356,73 @@ where
         db_query
     }
 }
+
+
+
+pub type DBQueryItem<'a, Q> = <Q as DBQueryInfo>::Item<'a>;
+
+struct Query<'world, 'state, Q: DBQueryInfo>  {
+    db : <Q as DBQueryInfo>::Database,
+    // world and state will be needed later
+    phantom: std::marker::PhantomData<&'world ()>,
+    phantom2: std::marker::PhantomData<&'state ()>,
+}
+
+impl<'w, 's, Q: DBQueryInfo> Query<'w, 's, Q> {
+    fn get(&self) -> Result<DBQueryItem<'_, Q>, ()> {
+        unimplemented!()
+    }
+}
+
+
+// impl DBQueryInfo for DatabaseEntity {
+//     type Item<'a> = &'a DatabaseEntity;
+//     type Database = AnyDatabaseResource;
+
+//     fn get<'w>(&mut self) -> Result<Self::Item<'w>, ()> {
+//         todo!()
+//     }
+// }
+
+
+pub trait DBQueryInfo {
+    // the returned item
+    type Item<'a>;
+    type Database: DatabaseResource;
+
+    fn get<'w>(&mut self, db: &mut Self::Database) -> Result<Self::Item<'w>, ()>;
+}
+
+
+
+impl DBQueryInfo for DatabaseEntity {
+    type Item<'a> = &'a DatabaseEntity;
+    type Database = AnyDatabaseResource;
+
+    fn get<'w>(&mut self, db: &mut Self::Database) -> Result<Self::Item<'w>, ()> {
+        todo!()
+    }
+}
+
+/*
+ The macro takes a tuple of DBQueryInfo and creates 
+ a new DBQueryInfo that returns a tuple of the items
+*/
+macro_rules! simple_composition_of_db_queries {
+    ( $( $name:ident )+ ) => {
+        impl<$($name: DBQueryInfo),+> DBQueryInfo for ($($name,)+)
+        {
+            type Item<'a> = ($($name::Item<'a>,)+);
+            type Database = <DatabaseEntity as DBQueryInfo>::Database;
+
+            fn get<'w>(&mut self, db: &mut Self::Database) -> Result<Self::Item<'w>, ()> {
+                //returns a tuple of all the gets
+                let ($($name,)+) = self;
+                Ok(($($name.get(db)?, )+))
+            }
+        }
+    };
+}
+
+
+simple_composition_of_db_queries! { DatabaseEntity }
