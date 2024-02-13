@@ -5,7 +5,7 @@ use bevy_ecs::{component::Component, prelude::*, system::SystemParam};
 use bevy_mod_index::prelude::*;
 use bevy_utils::hashbrown::HashSet;
 use sqlx::Database;
-use crate::{database_resource::*, DatabaseQueryInfo};
+use crate::{database_resource::*, DatabaseQueryInfo, Persisted};
 use crate::database_entity::{DatabaseEntity, DatabaseEntityIndex};
 use crate::database_resource::DatabaseResource;
 
@@ -143,7 +143,9 @@ where
     }
 
     fn get_mut<'w>(db: &mut Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
-        todo!()
+        Ok(
+            SingleComponentRetriever::<T, Self::Database>::get(db, world, db_entity)?
+        )
     }
 }
 
@@ -168,7 +170,9 @@ where
     }
 
     fn get_mut<'w>(db: &mut Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
-        todo!()
+        Ok(
+            SingleComponentRetriever::<T, Self::Database>::get_mut(db, world, db_entity)?
+        )
     }
 }
 
@@ -232,12 +236,11 @@ simple_composition_of_db_queries!{A B C D E F G H I}
 simple_composition_of_db_queries!{A B C D E F G H I J}
 simple_composition_of_db_queries!{A B C D E F G H I J K}
 
-fn a(mut query: Query<&UserMapper>, mut q2: Query<(&UserMapper, &mut UserMapper, &UserMapper)>) {
+const DB_ENTITY: DatabaseEntity = DatabaseEntity { id: 1, persisted: Persisted(true), dirty: false };
 
-    let a = query.get(&DatabaseEntity { id: 1, persisted: true.into(), dirty: false });
-    let a = query.get_mut(&DatabaseEntity { id: 1, persisted: true.into(), dirty: false });
+fn query_user_name(mut query: Query<(&mut UserMapper, &SellerMapper)>) {
 
-    let b = q2.get_mut(&DatabaseEntity { id: 1, persisted: true.into(), dirty: false });
+    let user = query.get_mut(&DB_ENTITY).unwrap();
 }
 
 #[derive(Component)]
@@ -249,6 +252,24 @@ pub struct User {
 pub struct UserMapper;
 impl ComponentMapper for UserMapper {
     type Item = User;
+
+    fn get<'c, E>(_e : E, _db_entity: &DatabaseEntity) -> Result<Self::Item, ()>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite>
+    {
+        todo!()
+    }
+}
+
+#[derive(Component)]
+pub struct Seller {
+    id: i32,
+    name: String,
+}
+
+pub struct SellerMapper;
+impl ComponentMapper for SellerMapper {
+    type Item = Seller;
 
     fn get<'c, E>(_e : E, _db_entity: &DatabaseEntity) -> Result<Self::Item, ()>
     where

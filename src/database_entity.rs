@@ -24,7 +24,7 @@ where
 }
 
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Debug, sqlx::FromRow)]
-pub struct Persisted(bool);
+pub struct Persisted(pub bool);
 
 impl Default for Persisted {
     fn default() -> Self {
