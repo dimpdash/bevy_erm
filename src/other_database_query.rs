@@ -268,31 +268,31 @@ trait Sa<D : DBQueryInfo> : DBQueryInfo<Database = <D as DBQueryInfo>::Database>
 //     }
 // }
 
-impl<A: ReadMarker, B: ReadMarker<Database = <A as DBQueryInfo>::Database>> DBQueryInfo for (A, B) {
-    type Item<'a> = (<A as DBQueryInfo>::Item<'a>, ROQueryItem<'a, B>);
-    type ReadOnlyItem<'a> = (ROQueryItem<'a, A>, ROQueryItem<'a, B>);
-    type Database = <A as DBQueryInfo>::Database;
-    type Mapper = NullMapper;
+// impl<A: ReadMarker, B: ReadMarker<Database = <A as DBQueryInfo>::Database>> DBQueryInfo for (A, B) {
+//     type Item<'a> = (<A as DBQueryInfo>::Item<'a>, ROQueryItem<'a, B>);
+//     type ReadOnlyItem<'a> = (ROQueryItem<'a, A>, ROQueryItem<'a, B>);
+//     type Database = <A as DBQueryInfo>::Database;
+//     type Mapper = NullMapper;
 
-    fn get<'w>(db: &mut Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::ReadOnlyItem<'w>, ()> 
-    {
-    //returns a tuple of all the gets
-        let a = A::get(db, world, db_entity)?;
-        let b = B::get(db, world, db_entity)?;
+//     fn get<'w>(db: &mut Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::ReadOnlyItem<'w>, ()> 
+//     {
+//     //returns a tuple of all the gets
+//         let a = A::get(db, world, db_entity)?;
+//         let b = B::get(db, world, db_entity)?;
 
-        Ok((a,b))
-    }
+//         Ok((a,b))
+//     }
 
-    fn get_mut<'w>(db: &mut Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
-        todo!()
-        // //returns a tuple of all the gets
-        // Ok((
-        //     A::get_mut(db, world, db_entity)?,
-        //     B::get_mut(db.into(), world, db_entity)?,
-        // ))
-    }
+//     fn get_mut<'w>(db: &mut Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
+//         todo!()
+//         // //returns a tuple of all the gets
+//         // Ok((
+//         //     A::get_mut(db, world, db_entity)?,
+//         //     B::get_mut(db.into(), world, db_entity)?,
+//         // ))
+//     }
 
-}
+// }
 
 
 /*
@@ -301,11 +301,13 @@ impl<A: ReadMarker, B: ReadMarker<Database = <A as DBQueryInfo>::Database>> DBQu
  a new DBQueryInfo that returns a tuple of the items
 */
 macro_rules! simple_composition_of_db_queries {
-    ( $( $name:ident )+ ) => {
-        impl<Z: DBQueryInfo, $($name: Sa<Z>, )+> DBQueryInfo for (Z, $($name,)+)
+    ( $( $name:ident )* ) => {
+        // include this Head Z so that can specify that the rest of them have the same database
+        // looks quite ugly but it works
+        impl<Z: ReadMarker, $($name: ReadMarker<Database = <Z as DBQueryInfo>::Database>, )*> DBQueryInfo for (Z, $($name,)*)
         {
-            type Item<'a> = (QueryItem<'a, Z>, $(QueryItem<'a, $name>, )+);
-            type ReadOnlyItem<'a> = (ROQueryItem<'a, Z>, $(ROQueryItem<'a, $name>, )+);
+            type Item<'a> = (QueryItem<'a, Z>, $(QueryItem<'a, $name>, )*);
+            type ReadOnlyItem<'a> = (ROQueryItem<'a, Z>, $(ROQueryItem<'a, $name>, )*);
             type Database = <Z as DBQueryInfo>::Database;
             type Mapper = NullMapper;
 
@@ -317,7 +319,7 @@ macro_rules! simple_composition_of_db_queries {
                     {
                         $name::get(db, world, db_entity)?
                     },
-                )+))
+                )*))
             }
 
             fn get_mut<'w>(db: &mut Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
@@ -329,7 +331,7 @@ macro_rules! simple_composition_of_db_queries {
                     {
                         $name::get_mut(db, world, db_entity)?
                     },
-                )+))
+                )*))
             }
         }
     };
@@ -340,19 +342,20 @@ macro_rules! simple_composition_of_db_queries {
 // Create a simple composition of DBQueryInfo for tuples of length 1 to 10
 // Allows DBQueryInfo to be composed of other DBQueryInfo
 // eg. DBQuery<(User, Item)>
-// simple_composition_of_db_queries!{A}
-// simple_composition_of_db_queries!{A B}
-// simple_composition_of_db_queries!{A B C}
-// simple_composition_of_db_queries!{A B C D}
-// simple_composition_of_db_queries!{A B C D E}
-// simple_composition_of_db_queries!{A B C D E F}
-// simple_composition_of_db_queries!{A B C D E F G}
-// simple_composition_of_db_queries!{A B C D E F G H}
-// simple_composition_of_db_queries!{A B C D E F G H I}
-// simple_composition_of_db_queries!{A B C D E F G H I J}
-// simple_composition_of_db_queries!{A B C D E F G H I J K}
+simple_composition_of_db_queries!{}
+simple_composition_of_db_queries!{A}
+simple_composition_of_db_queries!{A B}
+simple_composition_of_db_queries!{A B C}
+simple_composition_of_db_queries!{A B C D}
+simple_composition_of_db_queries!{A B C D E}
+simple_composition_of_db_queries!{A B C D E F}
+simple_composition_of_db_queries!{A B C D E F G}
+simple_composition_of_db_queries!{A B C D E F G H}
+simple_composition_of_db_queries!{A B C D E F G H I}
+simple_composition_of_db_queries!{A B C D E F G H I J}
+simple_composition_of_db_queries!{A B C D E F G H I J K}
 
-fn a(mut query: Query<ReadOnly<UserMapper>>, mut q2: Query<(Mutate<UserMapper>, ReadOnly<UserMapper>)>) {
+fn a(mut query: Query<ReadOnly<UserMapper>>, mut q2: Query<(Mutate<UserMapper>, ReadOnly<UserMapper>, ReadOnly<UserMapper>)>) {
 
     let a = query.get(&DatabaseEntity { id: 1, persisted: true.into(), dirty: false });
     let a = query.get_mut(&DatabaseEntity { id: 1, persisted: true.into(), dirty: false });
