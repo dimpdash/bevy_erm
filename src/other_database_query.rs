@@ -160,7 +160,7 @@ impl ComponentMapper for NullMapper {
 */
 macro_rules! simple_composition_of_db_queries {
     ( $( $name:ident )+ ) => {
-        impl DBQueryInfo for ($($name,)+)
+        impl<$($name: ComponentMapper, )+> DBQueryInfo for ($($name,)+)
         {
             type Item<'a> = ($(<$name as ComponentMapper>::Item, )+);
             type Database = AnyDatabaseResource;
@@ -181,8 +181,17 @@ macro_rules! simple_composition_of_db_queries {
     };
 }
 
-simple_composition_of_db_queries!{UserMapper UserMapper}
-
+simple_composition_of_db_queries!{A}
+simple_composition_of_db_queries!{A B}
+simple_composition_of_db_queries!{A B C}
+simple_composition_of_db_queries!{A B C D}
+simple_composition_of_db_queries!{A B C D E}
+simple_composition_of_db_queries!{A B C D E F}
+simple_composition_of_db_queries!{A B C D E F G}
+simple_composition_of_db_queries!{A B C D E F G H}
+simple_composition_of_db_queries!{A B C D E F G H I}
+simple_composition_of_db_queries!{A B C D E F G H I J}
+simple_composition_of_db_queries!{A B C D E F G H I J K}
 
 impl DBQueryInfo for (SingleComponentRetriever<UserMapper>, SingleComponentRetriever<UserMapper>) {
     type Item<'a> = (<UserMapper as ComponentMapper>::Item, <UserMapper as ComponentMapper>::Item, );
@@ -201,7 +210,7 @@ impl DBQueryInfo for (SingleComponentRetriever<UserMapper>, SingleComponentRetri
 
 pub struct UserMapper;
 impl ComponentMapper for UserMapper {
-    type Item = ();
+    type Item = (i64);
     type Database = AnyDatabaseResource;
 
     fn get<'c, E>(e : E, db_entity: &DatabaseEntity) -> Result<Self::Item, ()>
