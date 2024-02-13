@@ -104,7 +104,7 @@ impl ComponentMapper for NullMapper {
 impl<A: ComponentMapper> DBQueryInfo for A
     where  <A as ComponentMapper>::Item: Component
 {
-    type Item<'a> = <A as ComponentMapper>::Item;
+    type Item<'a> = &'a <A as ComponentMapper>::Item;
     type Database = AnyDatabaseResource;
     type Mapper = NullMapper;
 
@@ -128,7 +128,7 @@ macro_rules! simple_composition_of_db_queries {
         impl<$($name: ComponentMapper, )+> DBQueryInfo for ($($name,)+)
             where $(<$name as ComponentMapper>::Item: Component, )+
         {
-            type Item<'a> = ($(<$name as ComponentMapper>::Item, )+);
+            type Item<'a> = ($(&'a <$name as ComponentMapper>::Item, )+);
             type Database = AnyDatabaseResource;
             type Mapper = NullMapper;
 
@@ -257,26 +257,15 @@ where <MyMapper as ComponentMapper>::Item: Component
 impl<MyMapper : ComponentMapper> DBQueryInfo for SingleComponentRetriever<MyMapper, AnyDatabaseResource> 
 where <MyMapper as ComponentMapper>::Item: Component
 {
-    type Item<'a> = MyMapper::Item;
+    type Item<'a> = &'a MyMapper::Item;
     type Database = AnyDatabaseResource;
     type Mapper = MyMapper;
 
 
     fn get<'w>(db: &mut Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
-        Self::get_internal(db, world, db_entity, None);
+        let entity = Self::get_internal(db, world, db_entity, None);
         
-        let db_handle = db.get_connection();
-        let tr_option = &mut (*db_handle).write().unwrap().tr;
-        let conn = tr_option.as_mut().unwrap();
-        
-        let item = Self::Mapper::get(&mut **conn, db_entity);
-
-    
-
-
-        item
-        
-        
+        unsafe { Ok(world.world().get::<<MyMapper as ComponentMapper>::Item>(entity).unwrap()) }
     }
 }
 
