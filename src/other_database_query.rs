@@ -3,6 +3,7 @@ use bevy_ecs::{component::Component, prelude::*, system::SystemParam};
 use bevy_mod_index::prelude::*;
 use bevy_reflect::Map;
 use bevy_utils::hashbrown::HashSet;
+use sqlx::Sqlite;
 use crate::database_resource::*;
 use crate::database_entity::{DatabaseEntity, DatabaseEntityIndex};
 use crate::database_resource::DatabaseResource;
@@ -103,9 +104,9 @@ pub struct QueryFetchState<'w, 's, I: DatabaseQueryInfo + 'static> {
     phantom: std::marker::PhantomData<&'s ()>,
 }
 
-struct Query<'world, 'state, Q: DBQueryInfo>  {
-    db : ResMut<'world, <Q as DBQueryInfo>::Database>,
+pub struct Query<'world, 'state, Q: DBQueryInfo>  {
     // world and state will be needed later
+    db : ResMut<'world, <Q as DBQueryInfo>::Database>,
     world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'world>,
     phantom2: std::marker::PhantomData<&'state ()>,
 }
@@ -153,21 +154,13 @@ where
 }
 
 impl<'w, 's, Q: DBQueryInfo> Query<'w, 's, Q> {
-    fn get(&mut self, db_entity: &DatabaseEntity) -> Result<DBQueryItem<'_, Q>, ()> {
-        unsafe {
-            let mut world = self.world.world_mut();
-            Q::get(&mut self.db, &mut world, db_entity)
-        }
-
+    pub fn get(&mut self, db_entity: &DatabaseEntity) -> Result<DBQueryItem<'_, Q>, ()> {
+        Q::get(&mut self.db, self.world, db_entity)
     }
-}
-
-fn q(query: &mut Query<UserMapper>) {
 }
 
 pub trait ComponentMapper {
     type Item;
-    type Database: DatabaseResource;
 
     fn get<'c, E>(e : E, db_entity: &DatabaseEntity) -> Result<Self::Item, ()>
     where
@@ -180,15 +173,15 @@ pub trait DBQueryInfo {
     type Database: DatabaseResource;
     type Mapper: ComponentMapper;
 
-    fn get<'w>(db: &mut Self::Database, world: &mut World, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()>;
+    fn get<'w>(db: &mut Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()>;
 }
 
+// To satisfy the type system when a DBQueryInfo is composed of other DBQueryInfos
 pub struct NullMapper;
 impl ComponentMapper for NullMapper {
     type Item = ();
-    type Database = AnyDatabaseResource;
 
-    fn get<'c, E>(e : E, db_entity: &DatabaseEntity) -> Result<Self::Item, ()>
+    fn get<'c, E>(_e : E, _db_entity: &DatabaseEntity) -> Result<Self::Item, ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>
     {
@@ -199,16 +192,17 @@ impl ComponentMapper for NullMapper {
 // Let a Component Mapper be wrapped by a SingleComponentRetriever
 // when being taking in as a DBQueryInfo
 impl<A: ComponentMapper> DBQueryInfo for A
+    where  <A as ComponentMapper>::Item: Component
 {
     type Item<'a> = <A as ComponentMapper>::Item;
     type Database = AnyDatabaseResource;
     type Mapper = NullMapper;
 
-    fn get<'w>(db: &mut Self::Database, world: &mut World, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
+    fn get<'w>(db: &mut Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
     //returns a tuple of all the gets
         Ok(
             {
-                SingleComponentRetriever::<A>::get(db, world, db_entity)?
+                SingleComponentRetriever::<A, Self::Database>::get(db, world, db_entity)?
             },
         )
     }
@@ -222,16 +216,17 @@ impl<A: ComponentMapper> DBQueryInfo for A
 macro_rules! simple_composition_of_db_queries {
     ( $( $name:ident )+ ) => {
         impl<$($name: ComponentMapper, )+> DBQueryInfo for ($($name,)+)
+            where $(<$name as ComponentMapper>::Item: Component, )+
         {
             type Item<'a> = ($(<$name as ComponentMapper>::Item, )+);
             type Database = AnyDatabaseResource;
             type Mapper = NullMapper;
 
-            fn get<'w>(db: &mut Self::Database, world: &mut World, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
+            fn get<'w>(db: &mut Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
             //returns a tuple of all the gets
                 Ok(($(
                     {
-                        SingleComponentRetriever::<$name>::get(db, world, db_entity)?
+                        SingleComponentRetriever::<$name, Self::Database>::get(db, world, db_entity)?
                     },
                 )+))
             }
@@ -259,9 +254,8 @@ simple_composition_of_db_queries!{A B C D E F G H I J K}
 pub struct UserMapper;
 impl ComponentMapper for UserMapper {
     type Item = (i64);
-    type Database = AnyDatabaseResource;
 
-    fn get<'c, E>(e : E, db_entity: &DatabaseEntity) -> Result<Self::Item, ()>
+    fn get<'c, E>(_e : E, _db_entity: &DatabaseEntity) -> Result<Self::Item, ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>
     {
@@ -271,24 +265,108 @@ impl ComponentMapper for UserMapper {
 
 
 #[derive(Default)]
-pub struct SingleComponentRetriever<Mapper> {
-    phantom: std::marker::PhantomData<Mapper>,
+pub struct SingleComponentRetriever<Mapper, DatabaseResource> {
+    phantom: std::marker::PhantomData<(Mapper, DatabaseResource)>,
 }
 
-impl<MyMapper : ComponentMapper> DBQueryInfo for SingleComponentRetriever<MyMapper> {
+impl <MyMapper : ComponentMapper> SingleComponentRetriever<MyMapper, AnyDatabaseResource>
+where <MyMapper as ComponentMapper>::Item: Component
+{
+
+    fn get_internal<'w>(
+        db: &AnyDatabaseResource, 
+        world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, 
+        db_entity: &DatabaseEntity,
+        component_preloaded: Option<<MyMapper as ComponentMapper>::Item>,
+    ) -> Entity {
+        // let conn = self.db.get_transaction();
+        // using the database entity index
+        // fetch from resource
+        let db_handle = db.get_connection();
+        let tr_option = &mut (*db_handle).write().unwrap().tr;
+        let conn = tr_option.as_mut().unwrap();
+
+        let val = db_entity.id;
+
+        let mut reader = IntoSystem::into_system(
+            move |mut index: Index<DatabaseEntityIndex>| -> HashSet<Entity> { index.lookup(&val) },
+        );
+
+        let entity_set: HashSet<Entity> = unsafe {
+            reader.initialize(world.world_mut());
+            reader.run((), world.world_mut())
+        };
+
+        match entity_set.iter().next() {
+            // Entity has been read into memory before
+            Some(entity) => {
+                match unsafe { world.world_mut().get::<<MyMapper as ComponentMapper>::Item>(*entity) } {
+                    // Entity also already has the desired component
+                    Some(_) => *entity,
+                    // Entity does not have the desired component (Load from database)
+                    None => {
+                        let db_component = match component_preloaded {
+                            Some(component) => component,
+                            None => MyMapper::get(&mut **conn, db_entity).unwrap(),
+                        };
+                        // write the component to the entity
+                        unsafe {
+                            let w = world.world_mut();
+                            w.entity_mut(*entity).insert(db_component);
+                            *entity
+                        }
+                    }
+                }
+            }
+            // Entity not found in world
+            None => {
+                let component = match component_preloaded {
+                    Some(component) => component,
+                    None => MyMapper::get(&mut **conn, db_entity).unwrap(),
+                };
+                unsafe {
+                    let w = world.world_mut();
+                    let entity = w
+                        .spawn((
+                            DatabaseEntity {
+                                id: db_entity.id,
+                                persisted: true.into(),
+                                dirty: false,
+                            },
+                            component,
+                        ))
+                        .id();
+                    entity
+                }
+            }
+        }
+    }
+
+}
+
+impl<MyMapper : ComponentMapper> DBQueryInfo for SingleComponentRetriever<MyMapper, AnyDatabaseResource> 
+where <MyMapper as ComponentMapper>::Item: Component
+{
     type Item<'a> = MyMapper::Item;
     type Database = AnyDatabaseResource;
     type Mapper = MyMapper;
 
-    fn get<'w>(db: &mut Self::Database, world: &mut World, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
-    // retrieve the actual component using
+
+    fn get<'w>(db: &mut Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
+        Self::get_internal(db, world, db_entity, None);
+        
         let db_handle = db.get_connection();
         let tr_option = &mut (*db_handle).write().unwrap().tr;
         let conn = tr_option.as_mut().unwrap();
         
-        Self::Mapper::get(&mut **conn, db_entity)
+        let item = Self::Mapper::get(&mut **conn, db_entity);
+
+    
+
+
+        item
         
-        // database caching and all that good stuff
         
     }
 }
+
