@@ -98,16 +98,66 @@ where
 
 pub type DBQueryItem<'a, Q> = <Q as DBQueryInfo>::Item<'a>;
 
+pub struct QueryFetchState<'w, 's, I: DatabaseQueryInfo + 'static> {
+    db_state: <ResMut<'w, I::Database> as SystemParam>::State,
+    phantom: std::marker::PhantomData<&'s ()>,
+}
+
 struct Query<'world, 'state, Q: DBQueryInfo>  {
-    db : <Q as DBQueryInfo>::Database,
+    db : ResMut<'world, <Q as DBQueryInfo>::Database>,
     // world and state will be needed later
-    world: &'world mut World,
+    world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'world>,
     phantom2: std::marker::PhantomData<&'state ()>,
+}
+
+// So query can be constructed by the system
+unsafe impl<'w, 's, I: DBQueryInfo> SystemParam for Query<'w, 's, I>
+where
+    I: DatabaseQueryInfo + 'static,
+{
+    type State = QueryFetchState<'static, 'static, I>;
+
+    type Item<'world, 'state> = Query<'world, 'state, I>;
+
+    fn init_state(world: &mut World, system_meta: &mut bevy_ecs::system::SystemMeta) -> Self::State {
+        // https://github.com/chrisjuchem/bevy_mod_index/blob/15e9b4c9bbf26d4fc087ce056b07d1312464de2f/src/index.rs#L108
+        if !world.contains_resource::<AnyDatabaseResource>() {
+            world.init_resource::<AnyDatabaseResource>();
+        }
+
+        QueryFetchState {
+            db_state: <ResMut<'w, <I as DBQueryInfo>::Database>>::init_state(world, system_meta),
+            phantom: std::marker::PhantomData,
+        }
+    }
+
+    unsafe fn get_param<'w2, 's2>(
+        state: &'s2 mut Self::State,
+        system_meta: &bevy_ecs::system::SystemMeta,
+        world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w2>,
+        change_tick: bevy_ecs::component::Tick,
+    ) -> Self::Item<'w2, 's2> {
+        let db_query = Query {
+            db: <ResMut<'w2, <I as DBQueryInfo>::Database>>::get_param(
+                &mut state.db_state,
+                system_meta,
+                world,
+                change_tick,
+            ),
+            world,
+            phantom2: std::marker::PhantomData,
+        };
+
+        db_query
+    }
 }
 
 impl<'w, 's, Q: DBQueryInfo> Query<'w, 's, Q> {
     fn get(&mut self, db_entity: &DatabaseEntity) -> Result<DBQueryItem<'_, Q>, ()> {
-        Q::get(&mut self.db, &mut self.world, db_entity)
+        unsafe {
+            let mut world = self.world.world_mut();
+            Q::get(&mut self.db, &mut world, db_entity)
+        }
 
     }
 }
