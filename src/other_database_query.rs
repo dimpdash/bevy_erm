@@ -101,26 +101,19 @@ pub type DBQueryItem<'a, Q> = <Q as DBQueryInfo>::Item<'a>;
 struct Query<'world, 'state, Q: DBQueryInfo>  {
     db : <Q as DBQueryInfo>::Database,
     // world and state will be needed later
-    phantom: std::marker::PhantomData<&'world ()>,
+    world: &'world mut World,
     phantom2: std::marker::PhantomData<&'state ()>,
 }
 
 impl<'w, 's, Q: DBQueryInfo> Query<'w, 's, Q> {
-    fn get(&self) -> Result<DBQueryItem<'_, Q>, ()> {
-        unimplemented!()
+    fn get(&mut self, db_entity: &DatabaseEntity) -> Result<DBQueryItem<'_, Q>, ()> {
+        Q::get(&mut self.db, &mut self.world, db_entity)
 
     }
 }
 
-
-// impl DBQueryInfo for DatabaseEntity {
-//     type Item<'a> = &'a DatabaseEntity;
-//     type Database = AnyDatabaseResource;
-
-//     fn get<'w>(&mut self) -> Result<Self::Item<'w>, ()> {
-//         todo!()
-//     }
-// }
+fn q(query: &mut Query<UserMapper>) {
+}
 
 pub trait ComponentMapper {
     type Item;
@@ -137,7 +130,7 @@ pub trait DBQueryInfo {
     type Database: DatabaseResource;
     type Mapper: ComponentMapper;
 
-    fn get<'w>(&mut self, db: &mut Self::Database, world: &mut World, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()>;
+    fn get<'w>(db: &mut Self::Database, world: &mut World, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()>;
 }
 
 pub struct NullMapper;
@@ -153,8 +146,26 @@ impl ComponentMapper for NullMapper {
     }
 }
 
+// Let a Component Mapper be wrapped by a SingleComponentRetriever
+// when being taking in as a DBQueryInfo
+impl<A: ComponentMapper> DBQueryInfo for A
+{
+    type Item<'a> = <A as ComponentMapper>::Item;
+    type Database = AnyDatabaseResource;
+    type Mapper = NullMapper;
+
+    fn get<'w>(db: &mut Self::Database, world: &mut World, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
+    //returns a tuple of all the gets
+        Ok(
+            {
+                SingleComponentRetriever::<A>::get(db, world, db_entity)?
+            },
+        )
+    }
+}
 
 /*
+ Like above but for tuples of DBQueryInfo
  The macro takes a tuple of DBQueryInfo and creates 
  a new DBQueryInfo that returns a tuple of the items
 */
@@ -166,14 +177,11 @@ macro_rules! simple_composition_of_db_queries {
             type Database = AnyDatabaseResource;
             type Mapper = NullMapper;
 
-            fn get<'w>(&mut self, db: &mut Self::Database, world: &mut World, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
+            fn get<'w>(db: &mut Self::Database, world: &mut World, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
             //returns a tuple of all the gets
                 Ok(($(
                     {
-                        let mut r: SingleComponentRetriever<$name> = SingleComponentRetriever{
-                            phantom: std::marker::PhantomData::default(),
-                        };
-                        r.get(db, world, db_entity)?
+                        SingleComponentRetriever::<$name>::get(db, world, db_entity)?
                     },
                 )+))
             }
@@ -181,6 +189,11 @@ macro_rules! simple_composition_of_db_queries {
     };
 }
 
+
+
+// Create a simple composition of DBQueryInfo for tuples of length 1 to 10
+// Allows DBQueryInfo to be composed of other DBQueryInfo
+// eg. DBQuery<(User, Item)>
 simple_composition_of_db_queries!{A}
 simple_composition_of_db_queries!{A B}
 simple_composition_of_db_queries!{A B C}
@@ -192,21 +205,6 @@ simple_composition_of_db_queries!{A B C D E F G H}
 simple_composition_of_db_queries!{A B C D E F G H I}
 simple_composition_of_db_queries!{A B C D E F G H I J}
 simple_composition_of_db_queries!{A B C D E F G H I J K}
-
-impl DBQueryInfo for (SingleComponentRetriever<UserMapper>, SingleComponentRetriever<UserMapper>) {
-    type Item<'a> = (<UserMapper as ComponentMapper>::Item, <UserMapper as ComponentMapper>::Item, );
-    type Database = AnyDatabaseResource;
-    type Mapper = UserMapper;
-
-    fn get<'w>(&mut self, db: &mut Self::Database, world: &mut World, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
-        Ok((
-            self.0.get(db, world, db_entity)?,
-            self.1.get(db, world, db_entity)?,
-        ))
-    }
-
-}
-
 
 pub struct UserMapper;
 impl ComponentMapper for UserMapper {
@@ -232,7 +230,7 @@ impl<MyMapper : ComponentMapper> DBQueryInfo for SingleComponentRetriever<MyMapp
     type Database = AnyDatabaseResource;
     type Mapper = MyMapper;
 
-    fn get<'w>(&mut self, db: &mut Self::Database, world: &mut World, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
+    fn get<'w>(db: &mut Self::Database, world: &mut World, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
     // retrieve the actual component using
         let db_handle = db.get_connection();
         let tr_option = &mut (*db_handle).write().unwrap().tr;
