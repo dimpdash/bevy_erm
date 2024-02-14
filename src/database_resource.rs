@@ -4,8 +4,10 @@ use bevy_ecs::prelude::*;
 use futures::executor::block_on;
 use sqlx::Transaction;
 
-use crate::database_query::*;
+use crate::*;
 use crate::database_entity::DatabaseEntity;
+
+// use self::database_query::DBQueryInfo;
 
 
 // Initially was going to have this trait to allow for implementing for different sql databases
@@ -18,7 +20,7 @@ pub trait DatabaseResource: Resource + Default {
     
     fn get_connection(&self) -> Arc<RwLock<DatabaseHandle>>;
     // A way to get a unique key for the database
-    fn get_key(&mut self) -> i64;
+    fn get_key(&self) -> i64;
 
 
 }
@@ -29,11 +31,11 @@ pub struct DatabaseHandle {
     // Currently on handle one transaction at a time
     // IMPROVEMNET: Use a vec of transactions to allow for multiple transactions at once
     pub tr: Option<Transaction<'static, sqlx::Sqlite>>,
+    min_key: i64,
 }
 
 #[derive(Resource, Debug)]
 pub struct AnyDatabaseResource {
-    min_key: i64,
     db: Arc<RwLock<DatabaseHandle>>,
 }
 
@@ -41,8 +43,8 @@ impl Default for AnyDatabaseResource {
     fn default() -> Self {
         let pool = block_on(sqlx::SqlitePool::connect("sqlite::memory:")).unwrap();
         let tr = Some(block_on(pool.begin()).unwrap());
-        let db = Arc::new(RwLock::new(DatabaseHandle { pool, tr }));
-        AnyDatabaseResource { min_key: 0, db }
+        let db = Arc::new(RwLock::new(DatabaseHandle { pool, tr, min_key: 0}));
+        AnyDatabaseResource { db }
     }
 }
 
@@ -61,26 +63,23 @@ impl DatabaseResource for AnyDatabaseResource {
     // Rather than actually querying the database for key just hold on to the last key we had to issue
     // This is a bit of a hack but it's fine for now. As POC and only considering one machine
     // It is progressing into the negatives so that instantiating any objects with positive keys will not conflict
-    fn get_key(&mut self) -> i64 {
-        self.min_key -= 1;
-        self.min_key
+    fn get_key(&self) -> i64 {
+        let mut db = self.db.write().unwrap();
+        db.min_key -= 1;
+        db.min_key
+
     }
 }
 
-pub fn flush_component_to_db<T: DatabaseQueryInfo>(
-    query: Query<(&DatabaseEntity, &T::Component)>,
-    db_query: DatabaseQuery<T>,
-) {
-    let db_handle = db_query.db.get_connection();
-    let tr_option = &mut (*db_handle).write().unwrap().tr;
-    let tr = tr_option.as_mut().unwrap();
-
-    block_on(async {
-        for (db_entity, component) in query.iter() {
-            db_query
-                .update_or_insert_component(&mut **tr, db_entity, component)
-                .await
-                .unwrap();
-        }
-    });
+pub fn flush_component_to_db<T: ComponentMapper>(
+    query: Query<(&DatabaseEntity, &<T as ComponentMapper>::Component)>,
+    db_query: DatabaseQuery<&T>,
+)
+    where <T as ComponentMapper>::Component: bevy_ecs::component::Component
+{
+    for (db_entity, component) in query.iter() {
+        db_query
+            .update_or_insert_component(db_entity, component)
+            .unwrap();
+    }
 }

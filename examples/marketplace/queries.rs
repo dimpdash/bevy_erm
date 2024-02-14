@@ -36,20 +36,17 @@ impl BuyerQuery {
 }
 
 #[async_trait]
-impl DatabaseQueryInfo for BuyerQuery {
+impl ComponentMapper for BuyerQuery {
     type Component = Buyer;
-    type Database = AnyDatabaseResource;
-    type Index = DatabaseEntityIndex;
-
-    fn get_component<'c, E>(conn: E, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
+    
+    async fn get<'c, E>(conn: E, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
-        let buyer_bool = block_on(
+        let buyer_bool = 
             sqlx::query("SELECT buyer FROM users WHERE id = ?")
                 .bind(db_entity.id)
-                .fetch_one(conn),
-        );
+                .fetch_one(conn).await;
         match buyer_bool {
             Ok(_) => Ok(Buyer {}),
             Err(_) => Err(()),
@@ -87,20 +84,20 @@ impl DatabaseQueryInfo for BuyerQuery {
         }
     }
 
-    async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntity) -> Result<(), ()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
-    {
-        let r = block_on(
-            sqlx::query("UPDATE users SET buyer = 0 WHERE id = ?")
-                .bind(db_entity.id)
-                .execute(tr),
-        );
-        match r {
-            Ok(_) => Ok(()),
-            Err(_) => Err(()),
-        }
-    }
+    // async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntity) -> Result<(), ()>
+    // where
+    //     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+    // {
+    //     let r = block_on(
+    //         sqlx::query("UPDATE users SET buyer = 0 WHERE id = ?")
+    //             .bind(db_entity.id)
+    //             .execute(tr),
+    //     );
+    //     match r {
+    //         Ok(_) => Ok(()),
+    //         Err(_) => Err(()),
+    //     }
+    // }
 }
 
 
@@ -135,12 +132,11 @@ impl UserQuery {
 }
 
 #[async_trait]
-impl DatabaseQueryInfo for UserQuery {
+impl ComponentMapper for UserQuery {
     type Component = User;
-    type Database = AnyDatabaseResource;
-    type Index = DatabaseEntityIndex;
+    
 
-    fn get_component<'c, E>(conn: E, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
+    async fn get<'c, E>(conn: E, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
@@ -192,19 +188,19 @@ impl DatabaseQueryInfo for UserQuery {
         }
     }
 
-    async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntity) -> Result<(), ()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
-    {
-        let r = sqlx::query("DELETE FROM users WHERE id = ?")
-            .bind(db_entity.id)
-            .execute(tr)
-            .await;
-        match r {
-            Ok(_) => Ok(()),
-            Err(_) => Err(()),
-        }
-    }
+    // async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntity) -> Result<(), ()>
+    // where
+    //     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+    // {
+    //     let r = sqlx::query("DELETE FROM users WHERE id = ?")
+    //         .bind(db_entity.id)
+    //         .execute(tr)
+    //         .await;
+    //     match r {
+    //         Ok(_) => Ok(()),
+    //         Err(_) => Err(()),
+    //     }
+    // }
 }
 
 pub struct SellerQuery {}
@@ -237,12 +233,10 @@ impl SellerQuery {
 }
 
 #[async_trait]
-impl DatabaseQueryInfo for SellerQuery {
+impl ComponentMapper for SellerQuery {
     type Component = Seller;
-    type Database = AnyDatabaseResource;
-    type Index = DatabaseEntityIndex;
 
-    fn get_component<'c, E>(conn: E, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
+    async fn get<'c, E>(conn: E, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
@@ -288,20 +282,20 @@ impl DatabaseQueryInfo for SellerQuery {
         }
     }
 
-    async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntity) -> Result<(), ()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
-    {
-        let r = block_on(
-            sqlx::query("UPDATE users SET seller = 0 WHERE id = ?")
-                .bind(db_entity.id)
-                .execute(tr),
-        );
-        match r {
-            Ok(_) => Ok(()),
-            Err(_) => Err(()),
-        }
-    }
+    // async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntity) -> Result<(), ()>
+    // where
+    //     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+    // {
+    //     let r = block_on(
+    //         sqlx::query("UPDATE users SET seller = 0 WHERE id = ?")
+    //             .bind(db_entity.id)
+    //             .execute(tr),
+    //     );
+    //     match r {
+    //         Ok(_) => Ok(()),
+    //         Err(_) => Err(()),
+    //     }
+    // }
 }
 
 pub struct ItemQuery {}
@@ -388,12 +382,10 @@ impl ItemQuery {
 }
 
 #[async_trait]
-impl DatabaseQueryInfo for ItemQuery {
+impl ComponentMapper for ItemQuery {
     type Component = MarketItem;
-    type Database = AnyDatabaseResource;
-    type Index = DatabaseEntityIndex;
 
-    fn get_component<'c, E>(conn: E, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
+    async fn get<'c, E>(conn: E, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
@@ -449,19 +441,19 @@ impl DatabaseQueryInfo for ItemQuery {
         }
     }
 
-    async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntity) -> Result<(), ()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
-    {
-        let r = sqlx::query("DELETE FROM items WHERE id = ?")
-            .bind(db_entity.id)
-            .execute(tr)
-            .await;
-        match r {
-            Ok(_) => Ok(()),
-            Err(_) => Err(()),
-        }
-    }
+    // async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntity) -> Result<(), ()>
+    // where
+    //     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+    // {
+    //     let r = sqlx::query("DELETE FROM items WHERE id = ?")
+    //         .bind(db_entity.id)
+    //         .execute(tr)
+    //         .await;
+    //     match r {
+    //         Ok(_) => Ok(()),
+    //         Err(_) => Err(()),
+    //     }
+    // }
 }
 
 pub struct PurchaseItemQuery {}
@@ -510,12 +502,10 @@ impl PurchaseItemQuery {
 }
 
 #[async_trait]
-impl DatabaseQueryInfo for PurchaseItemQuery {
+impl ComponentMapper for PurchaseItemQuery {
     type Component = PurchasedItem;
-    type Database = AnyDatabaseResource;
-    type Index = DatabaseEntityIndex;
 
-    fn get_component<'c, E>(conn: E, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
+    async fn get<'c, E>(conn: E, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
@@ -569,18 +559,18 @@ impl DatabaseQueryInfo for PurchaseItemQuery {
         }
     }
 
-    async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntity) -> Result<(), ()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
-    {
-        let r = sqlx::query("DELETE FROM purchased_items WHERE id = ?")
-            .bind(db_entity.id)
-            .execute(tr)
-            .await;
-        match r {
-            Ok(_) => Ok(()),
-            Err(_) => Err(()),
-        }
-    }
+    // async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntity) -> Result<(), ()>
+    // where
+    //     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+    // {
+    //     let r = sqlx::query("DELETE FROM purchased_items WHERE id = ?")
+    //         .bind(db_entity.id)
+    //         .execute(tr)
+    //         .await;
+    //     match r {
+    //         Ok(_) => Ok(()),
+    //         Err(_) => Err(()),
+    //     }
+    // }
 }
 

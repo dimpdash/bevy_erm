@@ -35,7 +35,7 @@ pub trait DBQueryInfo {
     fn insert_component<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()>;
     fn load_components<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, 
         get_comp_from_db: impl FnOnce(DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>) -> Result<Vec<Self::ReadOnlyItem<'w>>, ()>;
-    fn create<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, component: Self::ReadOnlyItem<'w>) -> Result<(), ()>
+    fn create<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, component: Self::DerefItem) -> Result<(), ()>;
 }
 
 
@@ -114,6 +114,22 @@ impl<'w, 's, Q: DBQueryInfo> Query<'w, 's, Q> {
 
     pub fn load_components(& self, get_comp_from_db: impl FnOnce(DatabaseConnection<Q::Database>) -> Result<Vec<(DatabaseEntity, Q::DerefItem)>, ()>) -> Result<Vec<Q::ReadOnlyItem<'_>>, ()> {
         Q::load_components(& self.db, self.world, get_comp_from_db)
+    }
+
+    pub fn create(& self, component: Q::DerefItem) -> Result<(), ()> {
+        Q::create(& self.db, self.world, component)
+    }
+
+    pub fn update_or_insert_component(& self, db_entity: &DatabaseEntity, component: Q::ReadOnlyItem<'w>) -> Result<(), ()> {
+        if db_entity.persisted.into() { 
+            if db_entity.dirty {
+                Q::update_component(& self.db, self.world, db_entity, component)
+            } else {
+                Ok(())
+            }
+        } else {
+            Q::insert_component(& self.db, self.world, db_entity, component)
+        }
     }
 
 }
@@ -227,7 +243,7 @@ where
         )
     }
 
-    fn create<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
+    fn create<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, component: Self::DerefItem) -> Result<(), ()> {
         Ok(
             SingleComponentRetriever::<T, Self::Database>::create(db, world, component)?
         )
@@ -280,7 +296,7 @@ where
         )
     }
 
-    fn create<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
+    fn create<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, component: Self::DerefItem) -> Result<(), ()> {
         Ok(
             SingleComponentRetriever::<T, Self::Database>::create(db, world, component)?
         )
@@ -352,7 +368,7 @@ macro_rules! simple_composition_of_db_queries {
                 unimplemented!()
             }
 
-            fn create<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
+            fn create<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, component: Self::DerefItem) -> Result<(), ()> {
                 let (z, $(lower!($name),)*) = component;
 
                 Z::create(db, world, z)?;
@@ -373,15 +389,16 @@ macro_rules! simple_composition_of_db_queries {
 // simple_composition_of_db_queries!{}
 simple_composition_of_db_queries!{A}
 simple_composition_of_db_queries!{A B}
-simple_composition_of_db_queries!{A B C}
-simple_composition_of_db_queries!{A B C D}
-simple_composition_of_db_queries!{A B C D E}
-simple_composition_of_db_queries!{A B C D E F}
-simple_composition_of_db_queries!{A B C D E F G}
-simple_composition_of_db_queries!{A B C D E F G H}
-simple_composition_of_db_queries!{A B C D E F G H I}
-simple_composition_of_db_queries!{A B C D E F G H I J}
-simple_composition_of_db_queries!{A B C D E F G H I J K}
+//uncomment while deving to speedup compile times
+// simple_composition_of_db_queries!{A B C}
+// simple_composition_of_db_queries!{A B C D}
+// simple_composition_of_db_queries!{A B C D E}
+// simple_composition_of_db_queries!{A B C D E F}
+// simple_composition_of_db_queries!{A B C D E F G}
+// simple_composition_of_db_queries!{A B C D E F G H}
+// simple_composition_of_db_queries!{A B C D E F G H I}
+// simple_composition_of_db_queries!{A B C D E F G H I J}
+// simple_composition_of_db_queries!{A B C D E F G H I J K}
 
 #[derive(Default)]
 pub struct SingleComponentRetriever<Mapper, DatabaseResource> {
@@ -559,17 +576,19 @@ where
         Ok(components)
     }
 
-    fn create<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
+    fn create<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, component: Self::DerefItem) -> Result<(), ()> {
         unsafe {
-            let w = self.world.world_mut();
+            let w = world.world_mut();
             w.spawn((
                 component,
                 DatabaseEntity {
-                    id: self.db.get_key(),
+                    id: db.get_key(),
                     persisted: false.into(),
                     dirty: false,
                 },
             ));
         }
+
+        Ok(())
     }
 }

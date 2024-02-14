@@ -40,7 +40,7 @@ pub struct GetSellerItems {
 
 fn get_seller_items(
     mut events: EventReader<GetSellerItems>,
-    mut db_query: DatabaseQuery<ItemQuery>,
+    mut db_query: DatabaseQuery<&ItemQuery>,
 ) {
     println!("get seller items system");
     for event in events.read() {
@@ -52,7 +52,7 @@ fn get_seller_items(
 
 fn purchase_system(
     mut events: EventReader<Purchase>,
-    mut db_query_purchased: DatabaseQuery<PurchaseItemQuery>,
+    mut db_query_purchased: DatabaseQuery<&PurchaseItemQuery>,
 ) {
     println!("purchase system");
     for event in events.read() {
@@ -62,7 +62,7 @@ fn purchase_system(
             buyer: event.purchaser,
         };
 
-        db_query_purchased.create_entity(purchased_item);
+        db_query_purchased.create(purchased_item);
     }
 }
 
@@ -115,7 +115,9 @@ fn create_tables(db: ResMut<AnyDatabaseResource>) {
     });
 }
 
-fn print_items_table( mut items: DatabaseQuery<ItemQuery>, db_entity_query : Query<&DatabaseEntity>) {
+fn print_items_table( mut items: DatabaseQuery<&ItemQuery>, db_entity_query : Query<&DatabaseEntity>) {
+    let items = items.load_components(ItemQuery::load_all())
+    
     let items = items.load_components_and_entity(ItemQuery::load_all()).unwrap().into_iter().map(| (entity, item) | {
         let db_entity = db_entity_query.get(entity).unwrap();
         (db_entity, item)
@@ -131,7 +133,7 @@ fn print_items_table( mut items: DatabaseQuery<ItemQuery>, db_entity_query : Que
     items_table.printstd();
 }
 
-fn print_purchased_items_table( mut purchased_items: DatabaseQuery<PurchaseItemQuery>, db_entity_query : Query<&DatabaseEntity>) {
+fn print_purchased_items_table( mut purchased_items: DatabaseQuery<&PurchaseItemQuery>, db_entity_query : Query<&DatabaseEntity>) {
     let purchased_items = purchased_items.load_components_and_entity(PurchaseItemQuery::load_all()).unwrap().into_iter().map(| (entity, item) | {
         let db_entity = db_entity_query.get(entity).unwrap();
         (db_entity, item)
@@ -147,7 +149,7 @@ fn print_purchased_items_table( mut purchased_items: DatabaseQuery<PurchaseItemQ
     purchased_items_table.printstd();
 }
 
-fn print_tables(mut users : DatabaseQuery<UserQuery>, mut items: DatabaseQuery<ItemQuery>, mut purchased_items: DatabaseQuery<PurchaseItemQuery>, mut buyers: DatabaseQuery<BuyerQuery>, mut sellers: DatabaseQuery<SellerQuery>, db_entity_query : Query<&DatabaseEntity>) {
+fn print_tables(mut users : DatabaseQuery<&UserQuery>, mut items: DatabaseQuery<&ItemQuery>, mut purchased_items: DatabaseQuery<&PurchaseItemQuery>, mut buyers: DatabaseQuery<&BuyerQuery>, mut sellers: DatabaseQuery<&SellerQuery>, db_entity_query : Query<&DatabaseEntity>) {
     let users = {
         let users = users.load_components_and_entity(UserQuery::load_all()).unwrap();
 
