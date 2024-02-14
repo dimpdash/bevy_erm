@@ -1,16 +1,18 @@
-use bevy_erm::*;
 use async_trait::async_trait;
+use bevy_erm::*;
 
+use crate::components::*;
 use futures::executor::block_on;
 use sqlx::Row;
-use crate::components::*;
 
 pub struct BuyerQuery {}
 impl BuyerQuery {
-    pub fn load_all() -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, Buyer)>, ()>
-    {
+    pub fn load_all(
+    ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, Buyer)>, ()> {
         move |conn: &mut sqlx::SqliteConnection| {
-            let buyers = block_on(sqlx::query("SELECT id FROM users WHERE buyer = 1").fetch_all(conn)).unwrap();
+            let buyers =
+                block_on(sqlx::query("SELECT id FROM users WHERE buyer = 1").fetch_all(conn))
+                    .unwrap();
 
             let buyers = buyers
                 .into_iter()
@@ -36,15 +38,15 @@ impl BuyerQuery {
 #[async_trait]
 impl ComponentMapper for BuyerQuery {
     type Component = Buyer;
-    
+
     async fn get<'c, E>(conn: E, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
-        let buyer_bool = 
-            sqlx::query("SELECT buyer FROM users WHERE id = ?")
-                .bind(db_entity.id)
-                .fetch_one(conn).await;
+        let buyer_bool = sqlx::query("SELECT buyer FROM users WHERE id = ?")
+            .bind(db_entity.id)
+            .fetch_one(conn)
+            .await;
         match buyer_bool {
             Ok(_) => Ok(Buyer {}),
             Err(_) => Err(()),
@@ -98,14 +100,14 @@ impl ComponentMapper for BuyerQuery {
     // }
 }
 
-
 pub struct UserQuery {}
 
 impl UserQuery {
-    pub fn load_all() -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, User)>, ()>
-    {
+    pub fn load_all(
+    ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, User)>, ()> {
         move |conn: &mut sqlx::SqliteConnection| {
-            let users = block_on(sqlx::query("SELECT id, name FROM users").fetch_all(conn)).unwrap();
+            let users =
+                block_on(sqlx::query("SELECT id, name FROM users").fetch_all(conn)).unwrap();
 
             let users = users
                 .into_iter()
@@ -132,7 +134,6 @@ impl UserQuery {
 #[async_trait]
 impl ComponentMapper for UserQuery {
     type Component = User;
-    
 
     async fn get<'c, E>(conn: E, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
     where
@@ -204,10 +205,12 @@ impl ComponentMapper for UserQuery {
 pub struct SellerQuery {}
 
 impl SellerQuery {
-    pub fn load_all() -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, Seller)>, ()>
-    {
+    pub fn load_all(
+    ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, Seller)>, ()> {
         move |conn: &mut sqlx::SqliteConnection| {
-            let sellers = block_on(sqlx::query("SELECT id FROM users WHERE seller = 1").fetch_all(conn)).unwrap();
+            let sellers =
+                block_on(sqlx::query("SELECT id FROM users WHERE seller = 1").fetch_all(conn))
+                    .unwrap();
 
             let sellers = sellers
                 .into_iter()
@@ -299,10 +302,14 @@ impl ComponentMapper for SellerQuery {
 pub struct ItemQuery {}
 
 impl ItemQuery {
-    pub fn load_all() -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, MarketItem)>, ()>
+    pub fn load_all(
+    ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, MarketItem)>, ()>
     {
         move |conn: &mut sqlx::SqliteConnection| {
-            let items = block_on(sqlx::query("SELECT id, seller_id, name, price FROM items").fetch_all(conn)).unwrap();
+            let items = block_on(
+                sqlx::query("SELECT id, seller_id, name, price FROM items").fetch_all(conn),
+            )
+            .unwrap();
 
             let items = items
                 .into_iter()
@@ -457,7 +464,8 @@ impl ComponentMapper for ItemQuery {
 pub struct PurchaseItemQuery {}
 
 impl PurchaseItemQuery {
-    pub fn load_all() -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, PurchasedItem)>, ()>
+    pub fn load_all(
+    ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, PurchasedItem)>, ()>
     {
         move |conn: &mut sqlx::SqliteConnection| {
             let items = block_on(
@@ -571,4 +579,3 @@ impl ComponentMapper for PurchaseItemQuery {
     //     }
     // }
 }
-

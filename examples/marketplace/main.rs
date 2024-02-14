@@ -1,17 +1,15 @@
-
-mod queries;
 mod components;
+mod queries;
 
 use bevy_ecs::prelude::*;
 use bevy_erm::*;
-#[macro_use] extern crate prettytable;
-
-
+#[macro_use]
+extern crate prettytable;
 
 use bevy_app::prelude::*;
+use components::*;
 use futures::executor::block_on;
 use queries::*;
-use components::*;
 
 #[derive(Event, Debug)]
 pub struct Purchase {
@@ -33,14 +31,10 @@ pub struct GetSellerItems {
     pub seller: DatabaseEntity,
 }
 
-
-
-
-
 fn purchase_system(
     mut events: EventReader<Purchase>,
     db_query_purchased: DatabaseQuery<&PurchaseItemQuery>,
-    item_query : DatabaseQuery<&ItemQuery>,
+    item_query: DatabaseQuery<&ItemQuery>,
     purchaser_query: DatabaseQuery<&UserQuery>,
     seller_query: DatabaseQuery<&UserQuery>,
 ) {
@@ -49,7 +43,10 @@ fn purchase_system(
         let item = item_query.get(&event.item).unwrap();
         let seller_name = seller_query.get(&item.seller_id).unwrap().name.clone();
         let buyer_name = purchaser_query.get(&event.purchaser).unwrap().name.clone();
-        println!("\t{:} purchases {:} from {:}", buyer_name, item.name, seller_name);
+        println!(
+            "\t{:} purchases {:} from {:}",
+            buyer_name, item.name, seller_name
+        );
         let purchased_item = PurchasedItem {
             item: event.item,
             buyer: event.purchaser,
@@ -85,18 +82,21 @@ fn create_tables(db: Res<AnyDatabaseResource>) {
         .await
         .unwrap();
 
-
         // populate one buyer and one seller
-        sqlx::query("INSERT INTO users (id, name, buyer, seller) VALUES (?, 'Bob The Buyer', 1, 0)")
-            .bind(PURCHASER_ID)
-            .execute(conn)
-            .await
-            .unwrap();
-        sqlx::query("INSERT INTO users (id, name, buyer, seller) VALUES (?, 'Alice The Seller', 0, 1)")
-            .bind(SELLER_ID)
-            .execute(conn)
-            .await
-            .unwrap();
+        sqlx::query(
+            "INSERT INTO users (id, name, buyer, seller) VALUES (?, 'Bob The Buyer', 1, 0)",
+        )
+        .bind(PURCHASER_ID)
+        .execute(conn)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO users (id, name, buyer, seller) VALUES (?, 'Alice The Seller', 0, 1)",
+        )
+        .bind(SELLER_ID)
+        .execute(conn)
+        .await
+        .unwrap();
 
         // add one item to the market
         sqlx::query("INSERT INTO items (id, seller_id, name, price) VALUES (?, ?, 'corn', 100)")
@@ -109,7 +109,9 @@ fn create_tables(db: Res<AnyDatabaseResource>) {
 }
 
 fn print_items_table(items: DatabaseQuery<&ItemQuery>) {
-    let items = items.load_components::<(&DatabaseEntity, &MarketItem)>(ItemQuery::load_all()).unwrap();
+    let items = items
+        .load_components::<(&DatabaseEntity, &MarketItem)>(ItemQuery::load_all())
+        .unwrap();
 
     let mut items_table = prettytable::Table::new();
     items_table.add_row(row!["id", "seller_id", "name", "price"]);
@@ -122,7 +124,9 @@ fn print_items_table(items: DatabaseQuery<&ItemQuery>) {
 }
 
 fn print_purchased_items_table(purchased_items: DatabaseQuery<&PurchaseItemQuery>) {
-    let purchased_items: Vec<(&DatabaseEntity, &PurchasedItem)> = purchased_items.load_components::<(&DatabaseEntity, &PurchasedItem)>(PurchaseItemQuery::load_all()).unwrap();
+    let purchased_items: Vec<(&DatabaseEntity, &PurchasedItem)> = purchased_items
+        .load_components::<(&DatabaseEntity, &PurchasedItem)>(PurchaseItemQuery::load_all())
+        .unwrap();
 
     let mut purchased_items_table = prettytable::Table::new();
     purchased_items_table.add_row(row!["id", "item", "buyer"]);
@@ -134,18 +138,35 @@ fn print_purchased_items_table(purchased_items: DatabaseQuery<&PurchaseItemQuery
     purchased_items_table.printstd();
 }
 
-fn print_users_table(users : DatabaseQuery<&UserQuery>, buyers: DatabaseQuery<&BuyerQuery>, sellers: DatabaseQuery<&SellerQuery>) {
+fn print_users_table(
+    users: DatabaseQuery<&UserQuery>,
+    buyers: DatabaseQuery<&BuyerQuery>,
+    sellers: DatabaseQuery<&SellerQuery>,
+) {
     let users = {
-        let users = users.load_components::<(Entity, &DatabaseEntity, &User)>(UserQuery::load_all()).unwrap();
+        let users = users
+            .load_components::<(Entity, &DatabaseEntity, &User)>(UserQuery::load_all())
+            .unwrap();
 
-        let buyers = buyers.load_components::<(Entity, &Buyer)>(BuyerQuery::load_all()).unwrap();
-        let sellers = sellers.load_components::<(Entity, &Seller)>(SellerQuery::load_all()).unwrap();
-        
-        users.into_iter().map(|(entity, db_entity, user)| {
-            let buyer = buyers.iter().any(|(buyer_entity, _) | buyer_entity == &entity);
-            let seller = sellers.iter().any(|(seller_entity, _) | seller_entity == &entity);
-            (db_entity, user, buyer, seller)
-        }).collect::<Vec<_>>()
+        let buyers = buyers
+            .load_components::<(Entity, &Buyer)>(BuyerQuery::load_all())
+            .unwrap();
+        let sellers = sellers
+            .load_components::<(Entity, &Seller)>(SellerQuery::load_all())
+            .unwrap();
+
+        users
+            .into_iter()
+            .map(|(entity, db_entity, user)| {
+                let buyer = buyers
+                    .iter()
+                    .any(|(buyer_entity, _)| buyer_entity == &entity);
+                let seller = sellers
+                    .iter()
+                    .any(|(seller_entity, _)| seller_entity == &entity);
+                (db_entity, user, buyer, seller)
+            })
+            .collect::<Vec<_>>()
     };
 
     let mut users_table = prettytable::Table::new();
@@ -180,48 +201,53 @@ impl Plugin for MarketplacePlugin {
             .add_systems(PostStartup, print_items_table)
             .add_systems(PostStartup, print_users_table)
             .add_systems(PostStartup, print_purchased_items_table)
-            .add_systems(Update, purchase_system)
-            ;
+            .add_systems(Update, purchase_system);
     }
 }
 
-fn preload_events(mut purchase_events: EventWriter<Purchase>,
-    mut get_seller_items: EventWriter<GetSellerItems>) {
+fn preload_events(
+    mut purchase_events: EventWriter<Purchase>,
+    mut get_seller_items: EventWriter<GetSellerItems>,
+) {
+    println!("Preloading events:");
 
-        println!("Preloading events:");
+    let purchase_event = Purchase {
+        purchaser: DatabaseEntity {
+            id: PURCHASER_ID,
+            persisted: true.into(),
+            dirty: false,
+        },
+        item: DatabaseEntity {
+            id: MARKET_ITEM_ID,
+            persisted: true.into(),
+            dirty: false,
+        },
+    };
 
-        let purchase_event = Purchase {
-            purchaser: DatabaseEntity {
-                id: PURCHASER_ID,
-                persisted: true.into(),
-                dirty: false,
-            },
-            item: DatabaseEntity {
-                id: MARKET_ITEM_ID,
-                persisted: true.into(),
-                dirty: false,
-            },
-        };
+    println!(
+        "\tPreloading purchase event:\n\t\tbuyer {:?}, item {:?}",
+        purchase_event.purchaser.id, purchase_event.item.id
+    );
+    purchase_events.send(purchase_event);
 
-        println!("\tPreloading purchase event:\n\t\tbuyer {:?}, item {:?}", purchase_event.purchaser.id, purchase_event.item.id);
-        purchase_events.send(purchase_event);
+    let get_seller_items_event = GetSellerItems {
+        seller: DatabaseEntity {
+            id: SELLER_ID,
+            persisted: true.into(),
+            dirty: false,
+        },
+    };
 
-        let get_seller_items_event = GetSellerItems {
-            seller: DatabaseEntity {
-                id: SELLER_ID,
-                persisted: true.into(),
-                dirty: false,
-            },
-        };
+    println!(
+        "\tPreloading get seller items event:\n\t\tseller {:?}",
+        get_seller_items_event.seller.id
+    );
+    get_seller_items.send(get_seller_items_event);
 
-        println!("\tPreloading get seller items event:\n\t\tseller {:?}", get_seller_items_event.seller.id);
-        get_seller_items.send(get_seller_items_event);
-
-        println!("");
-
+    println!("");
 }
 
-fn commit_transaction(db: Res<AnyDatabaseResource>){
+fn commit_transaction(db: Res<AnyDatabaseResource>) {
     block_on(async {
         let db_handle = db.get_connection();
         let tr_option = &mut (*db_handle).write().unwrap().tr;
@@ -230,7 +256,7 @@ fn commit_transaction(db: Res<AnyDatabaseResource>){
     });
 }
 
-fn start_new_transaction(db: Res<AnyDatabaseResource>){
+fn start_new_transaction(db: Res<AnyDatabaseResource>) {
     block_on(async {
         let db_handle = db.get_connection();
         let new_transaction = {
