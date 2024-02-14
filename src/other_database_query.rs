@@ -1,11 +1,8 @@
-use std::any::Any;
 
-use bevy_ecs::system::lifetimeless::Read;
 use bevy_ecs::{component::Component, prelude::*, system::SystemParam};
 use bevy_mod_index::prelude::*;
 use bevy_utils::hashbrown::HashSet;
-use sqlx::Database;
-use crate::{database_resource::*, DatabaseQueryInfo, Persisted};
+use crate::database_resource::*;
 use crate::database_entity::{DatabaseEntity, DatabaseEntityIndex};
 use crate::database_resource::DatabaseResource;
 use casey::lower;
@@ -109,7 +106,6 @@ pub trait ComponentMapper {
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>;
     
     fn update_component<'c, E>(
-        &self,
         tr: E,
         db_entity: &DatabaseEntity,
         component: &Self::Item,
@@ -118,13 +114,13 @@ pub trait ComponentMapper {
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>;
     
     fn insert_component<'c, E>(
-        &self,
         tr: E,
         db_entity: &DatabaseEntity,
         component: &Self::Item,
     ) -> Result<(), ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>;
+
 }
 
 // To satisfy the type system when a DBQueryInfo is composed of other DBQueryInfos
@@ -136,29 +132,27 @@ impl ComponentMapper for NullMapper {
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>
     {
-        todo!()
+        unimplemented!()
     }
 
     fn update_component<'c, E>(
-        &self,
-        tr: E,
-        db_entity: &DatabaseEntity,
-        component: &Self::Item,
+        _tr: E,
+        _db_entity: &DatabaseEntity,
+        _component: &Self::Item,
     ) -> Result<(), ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite> {
-        todo!()
+        unimplemented!()
     }
 
     fn insert_component<'c, E>(
-        &self,
-        tr: E,
-        db_entity: &DatabaseEntity,
-        component: &Self::Item,
+        _tr: E,
+        _db_entity: &DatabaseEntity,
+        _component: &Self::Item,
     ) -> Result<(), ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite> {
-        todo!()
+        unimplemented!()
     }
 }
 
@@ -237,7 +231,9 @@ where
     }
 
     fn insert_component<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
-        todo!()
+        Ok(
+            SingleComponentRetriever::<T, Self::Database>::insert_component(db, world, db_entity, component)?
+        )
     }
 }
 
@@ -438,11 +434,19 @@ where
         }
     }
 
-    fn update_component<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
-        todo!()
+    fn update_component<'w>(db: &Self::Database, _world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
+        let db_handle = db.get_connection();
+        let tr_option = &mut (*db_handle).write().unwrap().tr;
+        let tr = tr_option.as_mut().unwrap();
+        
+        MyMapper::update_component(&mut **tr, db_entity, component)
     }
 
-    fn insert_component<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
-        todo!()
+    fn insert_component<'w>(db: &Self::Database, _world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
+        let db_handle = db.get_connection();
+        let tr_option = &mut (*db_handle).write().unwrap().tr;
+        let tr = tr_option.as_mut().unwrap();
+
+        MyMapper::insert_component(&mut **tr, db_entity, component)
     }
 }
