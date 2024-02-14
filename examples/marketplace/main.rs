@@ -12,7 +12,6 @@ use bevy_app::prelude::*;
 use futures::executor::block_on;
 use queries::*;
 use components::*;
-use sqlx::Database;
 
 #[derive(Event, Debug)]
 pub struct Purchase {
