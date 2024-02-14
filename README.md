@@ -1,5 +1,7 @@
 Issues
 
+ - making it async
+
 Limitations
 
 - single threaded

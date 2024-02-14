@@ -2,10 +2,12 @@
 use bevy_ecs::{component::Component, prelude::*, system::SystemParam, world::unsafe_world_cell::UnsafeWorldCell};
 use bevy_mod_index::prelude::*;
 use bevy_utils::hashbrown::HashSet;
+use futures::executor::block_on;
 use crate::database_resource::*;
 use crate::database_entity::{DatabaseEntity, DatabaseEntityIndex};
 use crate::database_resource::DatabaseResource;
 use casey::lower;
+use async_trait::async_trait;
 
 // pub trait ReadOnlyDBQueryInfo: DBQueryInfo<ReadOnly = Self> {}
 
@@ -115,14 +117,15 @@ impl<'w, 's, Q: DBQueryInfo> Query<'w, 's, Q> {
 
 }
 
+#[async_trait]
 pub trait ComponentMapper {
     type Item;
 
-    fn get<'c, E>(e : E, db_entity: &DatabaseEntity) -> Result<Self::Item, ()>
+    async fn get<'c, E>(e : E, db_entity: &DatabaseEntity) -> Result<Self::Item, ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>;
     
-    fn update_component<'c, E>(
+    async fn update_component<'c, E>(
         tr: E,
         db_entity: &DatabaseEntity,
         component: &Self::Item,
@@ -130,7 +133,7 @@ pub trait ComponentMapper {
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>;
     
-    fn insert_component<'c, E>(
+    async fn insert_component<'c, E>(
         tr: E,
         db_entity: &DatabaseEntity,
         component: &Self::Item,
@@ -142,17 +145,18 @@ pub trait ComponentMapper {
 
 // To satisfy the type system when a DBQueryInfo is composed of other DBQueryInfos
 pub struct NullMapper;
+#[async_trait]
 impl ComponentMapper for NullMapper {
     type Item = ();
 
-    fn get<'c, E>(_e : E, _db_entity: &DatabaseEntity) -> Result<Self::Item, ()>
+    async fn get<'c, E>(_e : E, _db_entity: &DatabaseEntity) -> Result<Self::Item, ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>
     {
         unimplemented!()
     }
 
-    fn update_component<'c, E>(
+    async fn update_component<'c, E>(
         _tr: E,
         _db_entity: &DatabaseEntity,
         _component: &Self::Item,
@@ -162,7 +166,7 @@ impl ComponentMapper for NullMapper {
         unimplemented!()
     }
 
-    fn insert_component<'c, E>(
+    async fn insert_component<'c, E>(
         _tr: E,
         _db_entity: &DatabaseEntity,
         _component: &Self::Item,
@@ -400,7 +404,7 @@ where <MyMapper as ComponentMapper>::Item: Component
                     None => {
                         let db_component = match component_preloaded {
                             Some(component) => component,
-                            None => MyMapper::get(&mut **conn, db_entity).unwrap(),
+                            None => block_on(MyMapper::get(&mut **conn, db_entity)).unwrap(),
                         };
                         // write the component to the entity
                         unsafe {
@@ -415,7 +419,7 @@ where <MyMapper as ComponentMapper>::Item: Component
             None => {
                 let component = match component_preloaded {
                     Some(component) => component,
-                    None => MyMapper::get(&mut **conn, db_entity).unwrap(),
+                    None => block_on(MyMapper::get(&mut **conn, db_entity)).unwrap(),
                 };
                 unsafe {
                     let w = world.world_mut();
@@ -509,7 +513,7 @@ where
         let tr_option = &mut (*db_handle).write().unwrap().tr;
         let tr = tr_option.as_mut().unwrap();
         
-        MyMapper::update_component(&mut **tr, db_entity, component)
+        block_on(MyMapper::update_component(&mut **tr, db_entity, component))
     }
 
     fn insert_component<'w>(db: &Self::Database, _world: UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
@@ -517,7 +521,7 @@ where
         let tr_option = &mut (*db_handle).write().unwrap().tr;
         let tr = tr_option.as_mut().unwrap();
 
-        MyMapper::insert_component(&mut **tr, db_entity, component)
+        block_on(MyMapper::insert_component(&mut **tr, db_entity, component))
     }
 
     fn load_components<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, 
