@@ -4,10 +4,7 @@ use bevy_ecs::prelude::*;
 use futures::executor::block_on;
 use sqlx::Transaction;
 
-use crate::database_entity::DatabaseEntity;
 use crate::*;
-
-// use self::database_query::DBQueryInfo;
 
 // Initially was going to have this trait to allow for implementing for different sql databases
 // but the type system became too complex (for me)

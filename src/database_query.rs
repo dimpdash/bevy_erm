@@ -1,6 +1,4 @@
-use crate::database_entity::{DatabaseEntity, DatabaseEntityIndex};
-use crate::database_resource::DatabaseResource;
-use crate::database_resource::*;
+use crate::*;
 use async_trait::async_trait;
 use bevy_ecs::query::WorldQuery;
 use bevy_ecs::{
