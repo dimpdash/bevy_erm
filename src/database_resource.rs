@@ -14,7 +14,7 @@ use crate::database_entity::DatabaseEntity;
 // Left the indirection in case I want to change it later
 
 pub trait DatabaseResource: Resource + Default {
-    type DatabaseConnection;
+    type DatabaseConnection<'a>;
     
     fn get_connection(&self) -> Arc<RwLock<DatabaseHandle>>;
     // A way to get a unique key for the database
@@ -52,7 +52,7 @@ unsafe impl Send for DatabaseHandle {}
 unsafe impl Sync for AnyDatabaseResource {}
 
 impl DatabaseResource for AnyDatabaseResource {
-    type DatabaseConnection = sqlx::SqliteConnection;
+    type DatabaseConnection<'a> = &'a mut sqlx::SqliteConnection;
 
     fn get_connection(&self) -> Arc<RwLock<DatabaseHandle>> {
         self.db.clone()

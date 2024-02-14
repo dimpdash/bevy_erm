@@ -18,7 +18,7 @@ type ROQueryItem<'a, Q> = <Q as DBQueryInfo>::ReadOnlyItem<'a>;
 
 
 
-pub type DatabaseConnection<D> = <D as DatabaseResource>::DatabaseConnection;
+pub type DatabaseConnection<'a, D> = <D as DatabaseResource>::DatabaseConnection<'a>;
 
 pub trait DBQueryInfo {
     // the returned item
@@ -34,7 +34,8 @@ pub trait DBQueryInfo {
     fn update_component<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()>;
     fn insert_component<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()>;
     fn load_components<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, 
-        get_comp_from_db: impl FnOnce(&DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>) -> Result<Vec<Self::ReadOnlyItem<'w>>, ()>;
+        get_comp_from_db: impl FnOnce(DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>) -> Result<Vec<Self::ReadOnlyItem<'w>>, ()>;
+    fn create<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, component: Self::ReadOnlyItem<'w>) -> Result<(), ()>
 }
 
 
@@ -111,7 +112,7 @@ impl<'w, 's, Q: DBQueryInfo> Query<'w, 's, Q> {
         Q::insert_component(& self.db, self.world, db_entity, component)
     }
 
-    pub fn load_components(& self, get_comp_from_db: impl FnOnce(&DatabaseConnection<Q::Database>) -> Result<Vec<(DatabaseEntity, Q::DerefItem)>, ()>) -> Result<Vec<Q::ReadOnlyItem<'_>>, ()> {
+    pub fn load_components(& self, get_comp_from_db: impl FnOnce(DatabaseConnection<Q::Database>) -> Result<Vec<(DatabaseEntity, Q::DerefItem)>, ()>) -> Result<Vec<Q::ReadOnlyItem<'_>>, ()> {
         Q::load_components(& self.db, self.world, get_comp_from_db)
     }
 
@@ -119,16 +120,16 @@ impl<'w, 's, Q: DBQueryInfo> Query<'w, 's, Q> {
 
 #[async_trait]
 pub trait ComponentMapper {
-    type Item;
+    type Component;
 
-    async fn get<'c, E>(e : E, db_entity: &DatabaseEntity) -> Result<Self::Item, ()>
+    async fn get<'c, E>(e : E, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>;
     
     async fn update_component<'c, E>(
         tr: E,
         db_entity: &DatabaseEntity,
-        component: &Self::Item,
+        component: &Self::Component,
     ) -> Result<(), ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>;
@@ -136,7 +137,7 @@ pub trait ComponentMapper {
     async fn insert_component<'c, E>(
         tr: E,
         db_entity: &DatabaseEntity,
-        component: &Self::Item,
+        component: &Self::Component,
     ) -> Result<(), ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>;
@@ -147,9 +148,9 @@ pub trait ComponentMapper {
 pub struct NullMapper;
 #[async_trait]
 impl ComponentMapper for NullMapper {
-    type Item = ();
+    type Component = ();
 
-    async fn get<'c, E>(_e : E, _db_entity: &DatabaseEntity) -> Result<Self::Item, ()>
+    async fn get<'c, E>(_e : E, _db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>
     {
@@ -159,7 +160,7 @@ impl ComponentMapper for NullMapper {
     async fn update_component<'c, E>(
         _tr: E,
         _db_entity: &DatabaseEntity,
-        _component: &Self::Item,
+        _component: &Self::Component,
     ) -> Result<(), ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite> {
@@ -169,7 +170,7 @@ impl ComponentMapper for NullMapper {
     async fn insert_component<'c, E>(
         _tr: E,
         _db_entity: &DatabaseEntity,
-        _component: &Self::Item,
+        _component: &Self::Component,
     ) -> Result<(), ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite> {
@@ -182,16 +183,16 @@ pub trait ReadMarker : DBQueryInfo {}
 
 impl<T: ComponentMapper> ReadMarker for &T 
 where   
-    <T as ComponentMapper>::Item: Component,
+    <T as ComponentMapper>::Component: Component,
     {}
 
 impl<T: ComponentMapper> DBQueryInfo for &T 
 where   
-    <T as ComponentMapper>::Item: Component,
+    <T as ComponentMapper>::Component: Component,
 {
-    type Item<'a> = &'a <T as ComponentMapper>::Item;
-    type ReadOnlyItem<'a> = &'a <T as ComponentMapper>::Item;
-    type DerefItem = <T as ComponentMapper>::Item;
+    type Item<'a> = &'a <T as ComponentMapper>::Component;
+    type ReadOnlyItem<'a> = &'a <T as ComponentMapper>::Component;
+    type DerefItem = <T as ComponentMapper>::Component;
     type Database = AnyDatabaseResource;
     type Mapper = NullMapper;
 
@@ -220,25 +221,31 @@ where
     }
 
     fn load_components<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, 
-        get_comp_from_db: impl FnOnce(&DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>) -> Result<Vec<Self::ReadOnlyItem<'w>>, ()> {
+        get_comp_from_db: impl FnOnce(DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>) -> Result<Vec<Self::ReadOnlyItem<'w>>, ()> {
         Ok(
             SingleComponentRetriever::<T, Self::Database>::load_components(db, world, get_comp_from_db)?
+        )
+    }
+
+    fn create<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
+        Ok(
+            SingleComponentRetriever::<T, Self::Database>::create(db, world, component)?
         )
     }
 }
 
 impl<T: ComponentMapper> ReadMarker for &mut T 
 where   
-    <T as ComponentMapper>::Item: Component,
+    <T as ComponentMapper>::Component: Component,
     {}
 
 impl<T: ComponentMapper> DBQueryInfo for &mut T 
 where   
-    <T as ComponentMapper>::Item: Component,
+    <T as ComponentMapper>::Component: Component,
 {
-    type Item<'a> = Mut<'a,<T as ComponentMapper>::Item>;
-    type ReadOnlyItem<'a> = &'a <T as ComponentMapper>::Item;
-    type DerefItem = <T as ComponentMapper>::Item;
+    type Item<'a> = Mut<'a,<T as ComponentMapper>::Component>;
+    type ReadOnlyItem<'a> = &'a <T as ComponentMapper>::Component;
+    type DerefItem = <T as ComponentMapper>::Component;
     type Database = AnyDatabaseResource;
     type Mapper = NullMapper;
 
@@ -267,9 +274,15 @@ where
     }
 
     fn load_components<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, 
-        get_comp_from_db: impl FnOnce(&DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()> ) -> Result<Vec<Self::ReadOnlyItem<'w>>, ()> {
+        get_comp_from_db: impl FnOnce(DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()> ) -> Result<Vec<Self::ReadOnlyItem<'w>>, ()> {
         Ok(
             SingleComponentRetriever::<T, Self::Database>::load_components(db, world, get_comp_from_db)?
+        )
+    }
+
+    fn create<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
+        Ok(
+            SingleComponentRetriever::<T, Self::Database>::create(db, world, component)?
         )
     }
 }
@@ -335,8 +348,17 @@ macro_rules! simple_composition_of_db_queries {
 
             // CODE SMELL: probably should split up interface to avoid this method
             fn load_components<'w>(_db: &Self::Database, _world: UnsafeWorldCell<'w>, 
-            _get_comp_from_db: impl FnOnce(&DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>) -> Result<Vec<Self::ReadOnlyItem<'w>>, ()> {
+            _get_comp_from_db: impl FnOnce(DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>) -> Result<Vec<Self::ReadOnlyItem<'w>>, ()> {
                 unimplemented!()
+            }
+
+            fn create<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
+                let (z, $(lower!($name),)*) = component;
+
+                Z::create(db, world, z)?;
+                $($name::create(db, world, lower!($name))?;)*
+
+                Ok(())
             }
         }
     };
@@ -367,14 +389,14 @@ pub struct SingleComponentRetriever<Mapper, DatabaseResource> {
 }
 
 impl <MyMapper : ComponentMapper> SingleComponentRetriever<MyMapper, AnyDatabaseResource>
-where <MyMapper as ComponentMapper>::Item: Component
+where <MyMapper as ComponentMapper>::Component: Component
 {
 
     fn get_internal<'w>(
         db: &AnyDatabaseResource, 
         world: UnsafeWorldCell<'w>, 
         db_entity: &DatabaseEntity,
-        component_preloaded: Option<<MyMapper as ComponentMapper>::Item>,
+        component_preloaded: Option<<MyMapper as ComponentMapper>::Component>,
     ) -> Entity {
         // let conn = self.db.get_transaction();
         // using the database entity index
@@ -397,7 +419,7 @@ where <MyMapper as ComponentMapper>::Item: Component
         match entity_set.iter().next() {
             // Entity has been read into memory before
             Some(entity) => {
-                match unsafe { world.world_mut().get::<<MyMapper as ComponentMapper>::Item>(*entity) } {
+                match unsafe { world.world_mut().get::<<MyMapper as ComponentMapper>::Component>(*entity) } {
                     // Entity also already has the desired component
                     Some(_) => *entity,
                     // Entity does not have the desired component (Load from database)
@@ -444,8 +466,8 @@ where <MyMapper as ComponentMapper>::Item: Component
         db: &AnyDatabaseResource,
         world: UnsafeWorldCell<'w>,
         get_comp_from_db: impl FnOnce(
-            &DatabaseConnection<AnyDatabaseResource>,
-        ) -> Result<Vec<(DatabaseEntity, <MyMapper as ComponentMapper>::Item)>, ()>,
+            DatabaseConnection<AnyDatabaseResource>,
+        ) -> Result<Vec<(DatabaseEntity, <MyMapper as ComponentMapper>::Component)>, ()>,
     ) -> Result<Vec<Entity>, ()> {
         // let conn = self.db.get_transaction();
         // using the database entity index
@@ -474,18 +496,18 @@ where <MyMapper as ComponentMapper>::Item: Component
 
 impl<MyMapper : ComponentMapper> DBQueryInfo for SingleComponentRetriever<MyMapper, AnyDatabaseResource> 
 where 
-    <MyMapper as ComponentMapper>::Item: Component,
+    <MyMapper as ComponentMapper>::Component: Component,
 {
-    type Item<'a> = Mut<'a, MyMapper::Item>;
-    type ReadOnlyItem<'a> = &'a MyMapper::Item;
-    type DerefItem = MyMapper::Item;
+    type Item<'a> = Mut<'a, MyMapper::Component>;
+    type ReadOnlyItem<'a> = &'a MyMapper::Component;
+    type DerefItem = MyMapper::Component;
     type Database = AnyDatabaseResource;
     type Mapper = MyMapper;
 
     fn get<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::ReadOnlyItem<'w>, ()> {
         let entity = Self::get_internal(db, world, db_entity, None);
         
-        unsafe { Ok(world.world().get::<<MyMapper as ComponentMapper>::Item>(entity).unwrap()) }
+        unsafe { Ok(world.world().get::<<MyMapper as ComponentMapper>::Component>(entity).unwrap()) }
     }
 
     fn get_mut<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
@@ -503,7 +525,7 @@ where
             Ok(world
                 .get_entity(entity)
                 .unwrap()
-                .get_mut::<<MyMapper as ComponentMapper>::Item>()
+                .get_mut::<<MyMapper as ComponentMapper>::Component>()
                 .unwrap())
         }
     }
@@ -525,15 +547,29 @@ where
     }
 
     fn load_components<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, 
-        get_comp_from_db: impl FnOnce(&DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>) -> Result<Vec<Self::ReadOnlyItem<'w>>, ()> {
+        get_comp_from_db: impl FnOnce(DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>) -> Result<Vec<Self::ReadOnlyItem<'w>>, ()> {
 
         let entities = Self::load_entities_for_components(db, world, get_comp_from_db)?;
 
         let components = entities
             .into_iter()
-            .map(|entity| unsafe { world.world().get::<<MyMapper as ComponentMapper>::Item>(entity).unwrap() })
+            .map(|entity| unsafe { world.world().get::<<MyMapper as ComponentMapper>::Component>(entity).unwrap() })
             .collect::<Vec<Self::ReadOnlyItem<'w>>>();
 
         Ok(components)
+    }
+
+    fn create<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
+        unsafe {
+            let w = self.world.world_mut();
+            w.spawn((
+                component,
+                DatabaseEntity {
+                    id: self.db.get_key(),
+                    persisted: false.into(),
+                    dirty: false,
+                },
+            ));
+        }
     }
 }
