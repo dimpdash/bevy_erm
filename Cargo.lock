@@ -294,6 +294,7 @@ dependencies = [
  "bevy_reflect",
  "bevy_tasks",
  "bevy_utils",
+ "casey",
  "downcast-rs",
  "event-listener 2.5.3",
  "fixedbitset",
@@ -582,6 +583,15 @@ name = "bytes"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2bd12c1caf447e69cd4528f47f94d203fd2582878ecb9e9465484c4148a8223"
+
+[[package]]
+name = "casey"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "614586263949597dcc18675da12ef9b429135e13628d92eb8b8c6fa50ca5656b"
+dependencies = [
+ "syn 1.0.109",
+]
 
 [[package]]
 name = "cc"

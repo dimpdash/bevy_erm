@@ -8,6 +8,7 @@ use sqlx::Database;
 use crate::{database_resource::*, DatabaseQueryInfo, Persisted};
 use crate::database_entity::{DatabaseEntity, DatabaseEntityIndex};
 use crate::database_resource::DatabaseResource;
+use casey::lower;
 
 // pub trait ReadOnlyDBQueryInfo: DBQueryInfo<ReadOnly = Self> {}
 
@@ -27,7 +28,8 @@ pub trait DBQueryInfo {
 
     fn get<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::ReadOnlyItem<'w>, ()>;
     fn get_mut<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()>;
-
+    fn update_component<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()>;
+    fn insert_component<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()>;
 
 }
 
@@ -96,12 +98,31 @@ impl<'w, 's, Q: DBQueryInfo> Query<'w, 's, Q> {
     pub fn get_mut(& self, db_entity: &DatabaseEntity) -> Result<Q::Item<'_>, ()> {
         Q::get_mut(& self.db, self.world, db_entity)
     }
+
 }
 
 pub trait ComponentMapper {
     type Item;
 
     fn get<'c, E>(e : E, db_entity: &DatabaseEntity) -> Result<Self::Item, ()>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite>;
+    
+    fn update_component<'c, E>(
+        &self,
+        tr: E,
+        db_entity: &DatabaseEntity,
+        component: &Self::Item,
+    ) -> Result<(), ()>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite>;
+    
+    fn insert_component<'c, E>(
+        &self,
+        tr: E,
+        db_entity: &DatabaseEntity,
+        component: &Self::Item,
+    ) -> Result<(), ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>;
 }
@@ -115,6 +136,28 @@ impl ComponentMapper for NullMapper {
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>
     {
+        todo!()
+    }
+
+    fn update_component<'c, E>(
+        &self,
+        tr: E,
+        db_entity: &DatabaseEntity,
+        component: &Self::Item,
+    ) -> Result<(), ()>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite> {
+        todo!()
+    }
+
+    fn insert_component<'c, E>(
+        &self,
+        tr: E,
+        db_entity: &DatabaseEntity,
+        component: &Self::Item,
+    ) -> Result<(), ()>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::Sqlite> {
         todo!()
     }
 }
@@ -147,6 +190,18 @@ where
             SingleComponentRetriever::<T, Self::Database>::get(db, world, db_entity)?
         )
     }
+
+    fn update_component<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
+        Ok(
+            SingleComponentRetriever::<T, Self::Database>::update_component(db, world, db_entity, component)?
+        )
+    }
+
+    fn insert_component<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
+        Ok(
+            SingleComponentRetriever::<T, Self::Database>::insert_component(db, world, db_entity, component)?
+        )
+    }
 }
 
 impl<T: ComponentMapper> ReadMarker for &mut T 
@@ -173,6 +228,16 @@ where
         Ok(
             SingleComponentRetriever::<T, Self::Database>::get_mut(db, world, db_entity)?
         )
+    }
+
+    fn update_component<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
+        Ok(
+            SingleComponentRetriever::<T, Self::Database>::update_component(db, world, db_entity, component)?
+        )
+    }
+
+    fn insert_component<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
+        todo!()
     }
 }
 
@@ -214,9 +279,29 @@ macro_rules! simple_composition_of_db_queries {
                     },
                 )*))
             }
+
+            fn update_component<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
+                
+                let (z, $(lower!($name),)*) = component;
+                
+                Z::update_component(db, world, db_entity, z)?;
+                $($name::update_component(db, world, db_entity, lower!($name))?;)*
+                
+                Ok(())
+            }
+
+            fn insert_component<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
+                let (z, $(lower!($name),)*) = component;
+                
+                Z::insert_component(db, world, db_entity, z)?;
+                $($name::insert_component(db, world, db_entity, lower!($name))?;)*
+                
+                Ok(())
+            }
         }
     };
 }
+
 
 
 
@@ -235,50 +320,6 @@ simple_composition_of_db_queries!{A B C D E F G H}
 simple_composition_of_db_queries!{A B C D E F G H I}
 simple_composition_of_db_queries!{A B C D E F G H I J}
 simple_composition_of_db_queries!{A B C D E F G H I J K}
-
-const DB_ENTITY: DatabaseEntity = DatabaseEntity { id: 1, persisted: Persisted(true), dirty: false };
-
-fn query_user_name(mut query: Query<(&mut UserMapper, &SellerMapper)>) {
-
-    let user = query.get_mut(&DB_ENTITY).unwrap();
-}
-
-#[derive(Component)]
-pub struct User {
-    id: i32,
-    name: String,
-}
-
-pub struct UserMapper;
-impl ComponentMapper for UserMapper {
-    type Item = User;
-
-    fn get<'c, E>(_e : E, _db_entity: &DatabaseEntity) -> Result<Self::Item, ()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite>
-    {
-        todo!()
-    }
-}
-
-#[derive(Component)]
-pub struct Seller {
-    id: i32,
-    name: String,
-}
-
-pub struct SellerMapper;
-impl ComponentMapper for SellerMapper {
-    type Item = Seller;
-
-    fn get<'c, E>(_e : E, _db_entity: &DatabaseEntity) -> Result<Self::Item, ()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite>
-    {
-        todo!()
-    }
-}
-
 
 #[derive(Default)]
 pub struct SingleComponentRetriever<Mapper, DatabaseResource> {
@@ -395,5 +436,13 @@ where
                 .get_mut::<<MyMapper as ComponentMapper>::Item>()
                 .unwrap())
         }
+    }
+
+    fn update_component<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
+        todo!()
+    }
+
+    fn insert_component<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
+        todo!()
     }
 }

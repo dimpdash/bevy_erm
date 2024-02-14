@@ -17,6 +17,7 @@ anyhow = "1.0.79"
 async-trait = "0.1.77"
 bevy_ecs = "0.12.1"
 bevy_mod_index = "0.3.0"
+casey = "0.4.0"
 futures = "0.3.30"
 sqlx = { version = "0.7.3", features = ["sqlite", "runtime-tokio"] }
 tokio = { version = "1.36.0", features = ["full"] }
