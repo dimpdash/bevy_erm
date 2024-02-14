@@ -1,10 +1,8 @@
-use bevy_ecs::{component::Component, prelude::*, schedule};
 use bevy_erm::*;
 use async_trait::async_trait;
 
-use bevy_app::prelude::*;
 use futures::executor::block_on;
-use sqlx::{FromRow, Row};
+use sqlx::Row;
 use crate::components::*;
 
 pub struct BuyerQuery {}

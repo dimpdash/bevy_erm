@@ -46,7 +46,7 @@ pub trait DBQueryInfo {
         world: UnsafeWorldCell<'w>, 
         get_comp_from_db: impl FnOnce(DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>
     ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()>;
-    fn create<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, component: Self::DerefItem) -> Result<(), ()>;
+    fn create(db: &Self::Database, world: UnsafeWorldCell<'_>, component: Self::DerefItem) -> Result<(), ()>;
 }
 
 
@@ -224,27 +224,19 @@ where
     type Mapper = NullMapper;
 
     fn get<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::ReadOnlyItem<'w>, ()> {
-        Ok(
-            SingleComponentRetriever::<T, Self::Database>::get(db, world, db_entity)?
-        )
+        SingleComponentRetriever::<T, Self::Database>::get(db, world, db_entity)
     }
 
     fn get_mut<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
-        Ok(
-            SingleComponentRetriever::<T, Self::Database>::get(db, world, db_entity)?
-        )
+        SingleComponentRetriever::<T, Self::Database>::get(db, world, db_entity)
     }
 
     fn update_component<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
-        Ok(
-            SingleComponentRetriever::<T, Self::Database>::update_component(db, world, db_entity, component)?
-        )
+        SingleComponentRetriever::<T, Self::Database>::update_component(db, world, db_entity, component)
     }
 
     fn insert_component<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
-        Ok(
-            SingleComponentRetriever::<T, Self::Database>::insert_component(db, world, db_entity, component)?
-        )
+        SingleComponentRetriever::<T, Self::Database>::insert_component(db, world, db_entity, component)
     }
 
     fn load_components<'w, R : ReturnSelector<'w>>(
@@ -252,15 +244,11 @@ where
         world: UnsafeWorldCell<'w>, 
         get_comp_from_db: impl FnOnce(DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>
     ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()> {
-        Ok(
-            SingleComponentRetriever::<T, Self::Database>::load_components::<R>(db, world, get_comp_from_db)?
-        )
+        SingleComponentRetriever::<T, Self::Database>::load_components::<R>(db, world, get_comp_from_db)
     }
 
-    fn create<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, component: Self::DerefItem) -> Result<(), ()> {
-        Ok(
-            SingleComponentRetriever::<T, Self::Database>::create(db, world, component)?
-        )
+    fn create(db: &Self::Database, world: UnsafeWorldCell<'_>, component: Self::DerefItem) -> Result<(), ()> {
+        SingleComponentRetriever::<T, Self::Database>::create(db, world, component)
     }
 }
 
@@ -280,27 +268,19 @@ where
     type Mapper = NullMapper;
 
     fn get<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::ReadOnlyItem<'w>, ()> {
-        Ok(
-            SingleComponentRetriever::<T, Self::Database>::get(db, world, db_entity)?
-        )
+        SingleComponentRetriever::<T, Self::Database>::get(db, world, db_entity)
     }
 
     fn get_mut<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
-        Ok(
-            SingleComponentRetriever::<T, Self::Database>::get_mut(db, world, db_entity)?
-        )
+        SingleComponentRetriever::<T, Self::Database>::get_mut(db, world, db_entity)
     }
 
     fn update_component<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
-        Ok(
-            SingleComponentRetriever::<T, Self::Database>::update_component(db, world, db_entity, component)?
-        )
+        SingleComponentRetriever::<T, Self::Database>::update_component(db, world, db_entity, component)
     }
 
     fn insert_component<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
-        Ok(
-            SingleComponentRetriever::<T, Self::Database>::insert_component(db, world, db_entity, component)?
-        )
+        SingleComponentRetriever::<T, Self::Database>::insert_component(db, world, db_entity, component)
     }
 
     fn load_components<'w, R : ReturnSelector<'w>>(
@@ -308,15 +288,11 @@ where
         world: UnsafeWorldCell<'w>, 
         get_comp_from_db: impl FnOnce(DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>
     ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()> {
-        Ok(
-            SingleComponentRetriever::<T, Self::Database>::load_components::<R>(db, world, get_comp_from_db)?
-        )
+        SingleComponentRetriever::<T, Self::Database>::load_components::<R>(db, world, get_comp_from_db)
     }
 
-    fn create<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, component: Self::DerefItem) -> Result<(), ()> {
-        Ok(
-            SingleComponentRetriever::<T, Self::Database>::create(db, world, component)?
-        )
+    fn create(db: &Self::Database, world: UnsafeWorldCell<'_>, component: Self::DerefItem) -> Result<(), ()> {
+        SingleComponentRetriever::<T, Self::Database>::create(db, world, component)
     }
 }
 
@@ -381,14 +357,14 @@ macro_rules! simple_composition_of_db_queries {
 
             // CODE SMELL: probably should split up interface to avoid this method
             fn load_components<'w, R : ReturnSelector<'w>>(
-                db: &Self::Database, 
-                world: UnsafeWorldCell<'w>, 
-                get_comp_from_db: impl FnOnce(DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>
+                _db: &Self::Database, 
+                _world: UnsafeWorldCell<'w>, 
+                _get_comp_from_db: impl FnOnce(DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>
             ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()> {
                 unimplemented!()
             }
 
-            fn create<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, component: Self::DerefItem) -> Result<(), ()> {
+            fn create(db: &Self::Database, world: UnsafeWorldCell<'_>, component: Self::DerefItem) -> Result<(), ()> {
                 let (z, $(lower!($name),)*) = component;
 
                 Z::create(db, world, z)?;
@@ -429,9 +405,9 @@ impl <MyMapper : ComponentMapper> SingleComponentRetriever<MyMapper, AnyDatabase
 where <MyMapper as ComponentMapper>::Component: Component
 {
 
-    fn get_internal<'w>(
+    fn get_internal(
         db: &AnyDatabaseResource, 
-        world: UnsafeWorldCell<'w>, 
+        world: UnsafeWorldCell<'_>, 
         db_entity: &DatabaseEntity,
         component_preloaded: Option<<MyMapper as ComponentMapper>::Component>,
     ) -> Entity {
@@ -499,9 +475,9 @@ where <MyMapper as ComponentMapper>::Component: Component
     }
 
 
-    pub fn load_entities_for_components<'w>(
+    pub fn load_entities_for_components(
         db: &AnyDatabaseResource,
-        world: UnsafeWorldCell<'w>,
+        world: UnsafeWorldCell<'_>,
         get_comp_from_db: impl FnOnce(
             DatabaseConnection<AnyDatabaseResource>,
         ) -> Result<Vec<(DatabaseEntity, <MyMapper as ComponentMapper>::Component)>, ()>,
@@ -713,7 +689,7 @@ where
         Ok(components)
     }
 
-    fn create<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, component: Self::DerefItem) -> Result<(), ()> {
+    fn create(db: &Self::Database, world: UnsafeWorldCell<'_>, component: Self::DerefItem) -> Result<(), ()> {
         unsafe {
             let w = world.world_mut();
             w.spawn((

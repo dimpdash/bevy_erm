@@ -2,15 +2,14 @@
 mod queries;
 mod components;
 
-use bevy_ecs::{component::Component, prelude::*, schedule};
+use bevy_ecs::{prelude::*, schedule};
 use bevy_erm::*;
 #[macro_use] extern crate prettytable;
-use async_trait::async_trait;
+
 
 
 use bevy_app::prelude::*;
 use futures::executor::block_on;
-use sqlx::{FromRow, Row};
 use queries::*;
 use components::*;
 
@@ -40,7 +39,7 @@ pub struct GetSellerItems {
 
 fn get_seller_items(
     mut events: EventReader<GetSellerItems>,
-    mut db_query: DatabaseQuery<&ItemQuery>,
+    db_query: DatabaseQuery<&ItemQuery>,
 ) {
     println!("get seller items system");
     for event in events.read() {
@@ -52,7 +51,7 @@ fn get_seller_items(
 
 fn purchase_system(
     mut events: EventReader<Purchase>,
-    mut db_query_purchased: DatabaseQuery<&PurchaseItemQuery>,
+    db_query_purchased: DatabaseQuery<&PurchaseItemQuery>,
 ) {
     println!("purchase system");
     for event in events.read() {
@@ -62,7 +61,7 @@ fn purchase_system(
             buyer: event.purchaser,
         };
 
-        db_query_purchased.create(purchased_item);
+        db_query_purchased.create(purchased_item).unwrap();
     }
 }
 
@@ -149,8 +148,8 @@ fn print_users_table(users : DatabaseQuery<&UserQuery>, buyers: DatabaseQuery<&B
         let sellers = sellers.load_components::<(Entity, &Seller)>(SellerQuery::load_all()).unwrap();
         
         users.into_iter().map(|(entity, db_entity, user)| {
-            let buyer = buyers.iter().find(|(buyer_entity, _) | buyer_entity == &entity).is_some();
-            let seller = sellers.iter().find(|(seller_entity, _) | seller_entity == &entity).is_some();
+            let buyer = buyers.iter().any(|(buyer_entity, _) | buyer_entity == &entity);
+            let seller = sellers.iter().any(|(seller_entity, _) | seller_entity == &entity);
             (db_entity, user, buyer, seller)
         }).collect::<Vec<_>>()
     };
