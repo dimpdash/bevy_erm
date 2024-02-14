@@ -2,7 +2,7 @@
 mod queries;
 mod components;
 
-use bevy_ecs::{prelude::*, schedule};
+use bevy_ecs::prelude::*;
 use bevy_erm::*;
 #[macro_use] extern crate prettytable;
 
@@ -12,6 +12,7 @@ use bevy_app::prelude::*;
 use futures::executor::block_on;
 use queries::*;
 use components::*;
+use sqlx::Database;
 
 #[derive(Event, Debug)]
 pub struct Purchase {
@@ -37,25 +38,19 @@ pub struct GetSellerItems {
 
 
 
-fn get_seller_items(
-    mut events: EventReader<GetSellerItems>,
-    db_query: DatabaseQuery<&ItemQuery>,
-) {
-    println!("get seller items system");
-    for event in events.read() {
-        let seller = event.seller;
-        let items = db_query.load_components::<&MarketItem>(ItemQuery::load_items_of_seller(seller));
-        println!("seller items: {:?}", items);
-    }
-}
-
 fn purchase_system(
     mut events: EventReader<Purchase>,
     db_query_purchased: DatabaseQuery<&PurchaseItemQuery>,
+    item_query : DatabaseQuery<&ItemQuery>,
+    purchaser_query: DatabaseQuery<&UserQuery>,
+    seller_query: DatabaseQuery<&UserQuery>,
 ) {
-    println!("purchase system");
+    println!("Processing purchase events");
     for event in events.read() {
-        println!("purchased item: {:?}", event.item);
+        let item = item_query.get(&event.item).unwrap();
+        let seller_name = seller_query.get(&item.seller_id).unwrap().name.clone();
+        let buyer_name = purchaser_query.get(&event.purchaser).unwrap().name.clone();
+        println!("\t{:} purchases {:} from {:}", buyer_name, item.name, seller_name);
         let purchased_item = PurchasedItem {
             item: event.item,
             buyer: event.purchaser,
@@ -93,12 +88,12 @@ fn create_tables(db: Res<AnyDatabaseResource>) {
 
 
         // populate one buyer and one seller
-        sqlx::query("INSERT INTO users (id, name, buyer, seller) VALUES (?, 'buyer', 1, 0)")
+        sqlx::query("INSERT INTO users (id, name, buyer, seller) VALUES (?, 'Bob The Buyer', 1, 0)")
             .bind(PURCHASER_ID)
             .execute(conn)
             .await
             .unwrap();
-        sqlx::query("INSERT INTO users (id, name, buyer, seller) VALUES (?, 'seller', 0, 1)")
+        sqlx::query("INSERT INTO users (id, name, buyer, seller) VALUES (?, 'Alice The Seller', 0, 1)")
             .bind(SELLER_ID)
             .execute(conn)
             .await
@@ -183,16 +178,20 @@ impl Plugin for MarketplacePlugin {
             .add_event::<GetSellerItems>()
             .init_resource::<AnyDatabaseResource>()
             .add_systems(Startup, create_tables)
+            .add_systems(PostStartup, print_items_table)
+            .add_systems(PostStartup, print_users_table)
+            .add_systems(PostStartup, print_purchased_items_table)
             .add_systems(Update, purchase_system)
-            .add_systems(Update, get_seller_items);
+            ;
     }
 }
 
 fn preload_events(mut purchase_events: EventWriter<Purchase>,
     mut get_seller_items: EventWriter<GetSellerItems>) {
 
-        // add the triggering purchase event
-        purchase_events.send(Purchase {
+        println!("Preloading events:");
+
+        let purchase_event = Purchase {
             purchaser: DatabaseEntity {
                 id: PURCHASER_ID,
                 persisted: true.into(),
@@ -203,15 +202,24 @@ fn preload_events(mut purchase_events: EventWriter<Purchase>,
                 persisted: true.into(),
                 dirty: false,
             },
-        });
-    
-        get_seller_items.send(GetSellerItems {
+        };
+
+        println!("\tPreloading purchase event:\n\t\tbuyer {:?}, item {:?}", purchase_event.purchaser.id, purchase_event.item.id);
+        purchase_events.send(purchase_event);
+
+        let get_seller_items_event = GetSellerItems {
             seller: DatabaseEntity {
                 id: SELLER_ID,
                 persisted: true.into(),
                 dirty: false,
             },
-        });
+        };
+
+        println!("\tPreloading get seller items event:\n\t\tseller {:?}", get_seller_items_event.seller.id);
+        get_seller_items.send(get_seller_items_event);
+
+        println!("");
+
 }
 
 fn commit_transaction(db: Res<AnyDatabaseResource>){
@@ -236,9 +244,9 @@ fn start_new_transaction(db: Res<AnyDatabaseResource>){
 }
 
 fn runner(mut app: App) {
-    let mut pre_pre_startup_schedule = schedule::Schedule::default();
-    pre_pre_startup_schedule.add_systems(preload_events);
-    pre_pre_startup_schedule.run(&mut app.world);
+    let mut preload_events = IntoSystem::into_system(preload_events);
+    preload_events.initialize(&mut app.world);
+    preload_events.run((), &mut app.world);
 
     let mut is_sell_events = IntoSystem::into_system(events_available::<Sell>);
     let mut is_purchase_events = IntoSystem::into_system(events_available::<Purchase>);
@@ -256,7 +264,7 @@ fn runner(mut app: App) {
     };
 
     while still_events_to_read(&mut app.world) {
-        println!("==== running iteration ====");
+        println!("===========================");
         app.update();
     }
     println!("===========================");
@@ -270,7 +278,7 @@ fn runner(mut app: App) {
     commit_schedule.add_systems(commit_transaction);
     commit_schedule.run(&mut app.world);
 
-    println!("done");
+    println!("All Events Processed");
 
     let mut new_transation_schedule = Schedule::default();
     new_transation_schedule.add_systems(start_new_transaction);
@@ -278,8 +286,8 @@ fn runner(mut app: App) {
 
     let mut end_schedule = Schedule::default();
     end_schedule.add_systems(print_purchased_items_table);
-    end_schedule.add_systems(print_items_table);
-    end_schedule.add_systems(print_users_table);
+    // end_schedule.add_systems(print_items_table);
+    // end_schedule.add_systems(print_users_table);
     end_schedule.run(&mut app.world);
 }
 
