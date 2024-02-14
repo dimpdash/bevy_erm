@@ -25,8 +25,8 @@ pub trait DBQueryInfo {
     type Database: DatabaseResource;
     type Mapper: ComponentMapper;
 
-    fn get<'w>(db: &mut Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::ReadOnlyItem<'w>, ()>;
-    fn get_mut<'w>(db: &mut Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()>;
+    fn get<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::ReadOnlyItem<'w>, ()>;
+    fn get_mut<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()>;
 
 
 }
@@ -41,7 +41,7 @@ pub struct QueryFetchState<'w, 's, I: DBQueryInfo + 'static> {
 
 pub struct Query<'world, 'state, Q: DBQueryInfo>  {
     // world and state will be needed later
-    db : ResMut<'world, <Q as DBQueryInfo>::Database>,
+    db : Res<'world, <Q as DBQueryInfo>::Database>,
     world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'world>,
     phantom2: std::marker::PhantomData<&'state ()>,
 }
@@ -74,7 +74,7 @@ where
         change_tick: bevy_ecs::component::Tick,
     ) -> Self::Item<'w2, 's2> {
         let db_query = Query {
-            db: <ResMut<'w2, <I as DBQueryInfo>::Database>>::get_param(
+            db: <Res<'w2, <I as DBQueryInfo>::Database>>::get_param(
                 &mut state.db_state,
                 system_meta,
                 world,
@@ -89,12 +89,12 @@ where
 }
 
 impl<'w, 's, Q: DBQueryInfo> Query<'w, 's, Q> {
-    pub fn get(&mut self, db_entity: &DatabaseEntity) -> Result<Q::ReadOnlyItem<'_>, ()> {
-        Q::get(&mut self.db, self.world, db_entity)
+    pub fn get(& self, db_entity: &DatabaseEntity) -> Result<Q::ReadOnlyItem<'_>, ()> {
+        Q::get(& self.db, self.world, db_entity)
     }
 
-    pub fn get_mut(&mut self, db_entity: &DatabaseEntity) -> Result<Q::Item<'_>, ()> {
-        Q::get_mut(&mut self.db, self.world, db_entity)
+    pub fn get_mut(& self, db_entity: &DatabaseEntity) -> Result<Q::Item<'_>, ()> {
+        Q::get_mut(& self.db, self.world, db_entity)
     }
 }
 
@@ -136,13 +136,13 @@ where
     type Database = AnyDatabaseResource;
     type Mapper = NullMapper;
 
-    fn get<'w>(db: &mut Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::ReadOnlyItem<'w>, ()> {
+    fn get<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::ReadOnlyItem<'w>, ()> {
         Ok(
             SingleComponentRetriever::<T, Self::Database>::get(db, world, db_entity)?
         )
     }
 
-    fn get_mut<'w>(db: &mut Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
+    fn get_mut<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
         Ok(
             SingleComponentRetriever::<T, Self::Database>::get(db, world, db_entity)?
         )
@@ -163,13 +163,13 @@ where
     type Database = AnyDatabaseResource;
     type Mapper = NullMapper;
 
-    fn get<'w>(db: &mut Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::ReadOnlyItem<'w>, ()> {
+    fn get<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::ReadOnlyItem<'w>, ()> {
         Ok(
             SingleComponentRetriever::<T, Self::Database>::get(db, world, db_entity)?
         )
     }
 
-    fn get_mut<'w>(db: &mut Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
+    fn get_mut<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
         Ok(
             SingleComponentRetriever::<T, Self::Database>::get_mut(db, world, db_entity)?
         )
@@ -192,7 +192,7 @@ macro_rules! simple_composition_of_db_queries {
             type Database = <Z as DBQueryInfo>::Database;
             type Mapper = NullMapper;
 
-            fn get<'w>(db: &mut Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::ReadOnlyItem<'w>, ()> {
+            fn get<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::ReadOnlyItem<'w>, ()> {
             //returns a tuple of all the gets
                 Ok((
                     Z::get(db, world, db_entity)?,
@@ -203,7 +203,7 @@ macro_rules! simple_composition_of_db_queries {
                 )*))
             }
 
-            fn get_mut<'w>(db: &mut Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
+            fn get_mut<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
                 //returns a tuple of all the gets
                 Ok((
                     Z::get_mut(db, world, db_entity)?,
@@ -371,13 +371,13 @@ where
     type Database = AnyDatabaseResource;
     type Mapper = MyMapper;
 
-    fn get<'w>(db: &mut Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::ReadOnlyItem<'w>, ()> {
+    fn get<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::ReadOnlyItem<'w>, ()> {
         let entity = Self::get_internal(db, world, db_entity, None);
         
         unsafe { Ok(world.world().get::<<MyMapper as ComponentMapper>::Item>(entity).unwrap()) }
     }
 
-    fn get_mut<'w>(db: &mut Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
+    fn get_mut<'w>(db: &Self::Database, world: bevy_ecs::world::unsafe_world_cell::UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
         let entity = Self::get_internal(db, world, db_entity, None);
         
         unsafe {
