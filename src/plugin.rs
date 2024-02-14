@@ -21,23 +21,24 @@ pub struct EntityRelationalMapperConfig
 impl EntityRelationMapperPlugin {
     pub fn create_runner(&self, mut h : EntityRelationalMapperConfig) -> impl FnOnce(App) + 'static + Send {
         move |mut app: App | {
+            //TODO
             // while (h.still_events_to_read)(&mut app.world) {
             //     println!("===========================");
             //     app.update();
             // }
-            println!("===========================");
+            // println!("===========================");
         
-            (h.flush_to_db_schedule).run(&mut app.world);
+            // (h.flush_to_db_schedule).run(&mut app.world);
         
-            let mut commit_schedule = Schedule::default();
-            commit_schedule.add_systems(commit_transaction);
-            commit_schedule.run(&mut app.world);
+            // let mut commit_schedule = Schedule::default();
+            // commit_schedule.add_systems(commit_transaction);
+            // commit_schedule.run(&mut app.world);
         
-            println!("All Events Processed");
+            // println!("All Events Processed");
         
-            let mut new_transation_schedule = Schedule::default();
-            new_transation_schedule.add_systems(start_new_transaction);
-            new_transation_schedule.run(&mut app.world);
+            // let mut new_transation_schedule = Schedule::default();
+            // new_transation_schedule.add_systems(start_new_transaction);
+            // new_transation_schedule.run(&mut app.world);
         }
     }
 }

@@ -189,7 +189,6 @@ const PURCHASER_ID: i64 = 1;
 const SELLER_ID: i64 = 2;
 const MARKET_ITEM_ID: i64 = 3;
 
-
 pub struct MarketplacePlugin;
 
 impl Plugin for MarketplacePlugin {
@@ -197,6 +196,7 @@ impl Plugin for MarketplacePlugin {
         app.add_event::<Purchase>()
             .add_event::<Sell>()
             .add_event::<GetSellerItems>()
+            .init_resource::<AnyDatabaseResource>()
             .add_systems(Startup, create_tables)
             .add_systems(PostStartup, print_items_table)
             .add_systems(PostStartup, print_users_table)
@@ -247,33 +247,79 @@ fn preload_events(
     println!("");
 }
 
+fn commit_transaction(db: Res<AnyDatabaseResource>) {
+    block_on(async {
+        let db_handle = db.get_connection();
+        let tr_option = &mut (*db_handle).write().unwrap().tr;
+        let tr = tr_option.take().unwrap();
+        tr.commit().await.unwrap();
+    });
+}
+
+fn start_new_transaction(db: Res<AnyDatabaseResource>) {
+    block_on(async {
+        let db_handle = db.get_connection();
+        let new_transaction = {
+            let pool = &(*db_handle).write().unwrap().pool;
+            pool.begin().await.unwrap()
+        };
+        let tr_option = &mut (*db_handle).write().unwrap().tr;
+        *tr_option = Some(new_transaction);
+    });
+}
+
+fn runner(mut app: App) {
+    let mut preload_events = IntoSystem::into_system(preload_events);
+    preload_events.initialize(&mut app.world);
+    preload_events.run((), &mut app.world);
+
+    let mut is_sell_events = IntoSystem::into_system(events_available::<Sell>);
+    let mut is_purchase_events = IntoSystem::into_system(events_available::<Purchase>);
+    let mut is_get_seller_items_events =
+        IntoSystem::into_system(events_available::<GetSellerItems>);
+
+    is_sell_events.initialize(&mut app.world);
+    is_purchase_events.initialize(&mut app.world);
+    is_get_seller_items_events.initialize(&mut app.world);
+
+    let mut still_events_to_read = |world: &mut World| -> bool {
+        is_sell_events.run((), world)
+            || is_purchase_events.run((), world)
+            || is_get_seller_items_events.run((), world)
+    };
+
+    while still_events_to_read(&mut app.world) {
+        println!("===========================");
+        app.update();
+    }
+    println!("===========================");
+
+    let mut flush_to_db_schedule = Schedule::default();
+    flush_to_db_schedule.add_systems(flush_component_to_db::<ItemQuery>);
+    flush_to_db_schedule.add_systems(flush_component_to_db::<PurchaseItemQuery>);
+    flush_to_db_schedule.run(&mut app.world);
+
+    let mut commit_schedule = Schedule::default();
+    commit_schedule.add_systems(commit_transaction);
+    commit_schedule.run(&mut app.world);
+
+    println!("All Events Processed");
+
+    let mut new_transation_schedule = Schedule::default();
+    new_transation_schedule.add_systems(start_new_transaction);
+    new_transation_schedule.run(&mut app.world);
+
+    let mut end_schedule = Schedule::default();
+    end_schedule.add_systems(print_purchased_items_table);
+    // end_schedule.add_systems(print_items_table);
+    // end_schedule.add_systems(print_users_table);
+    end_schedule.run(&mut app.world);
+}
+
 #[tokio::main]
 async fn main() {
-    let mut app = App::new();
-
-    // let mut is_sell_events = IntoSystem::into_system(events_available::<Sell>);
-    // let mut is_purchase_events = IntoSystem::into_system(events_available::<Purchase>);
-    // let mut is_get_seller_items_events =
-    //     IntoSystem::into_system(events_available::<GetSellerItems>);
-
-    // is_sell_events.initialize(&mut app.world);
-    // is_purchase_events.initialize(&mut app.world);
-    // is_get_seller_items_events.initialize(&mut app.world);
-
-    // let mut still_events_to_read = |world: &mut World| -> bool {
-    //     is_sell_events.run((), world)
-    //         || is_purchase_events.run((), world)
-    //         || is_get_seller_items_events.run((), world)
-    // };
-
-
-    // let config = EntityRelationalMapperConfig {
-    //     still_events_to_read,
-    //     flush_to_db_schedule: Schedule::default(),
-    // };
-
-    app
-        // .add_plugins(EntityRelationMapperPlugin{config})
+    App::new()
+        .set_runner(runner)
         .add_plugins(MarketplacePlugin)
         .run();
 }
