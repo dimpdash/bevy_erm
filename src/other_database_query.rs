@@ -1,4 +1,5 @@
 
+use bevy_ecs::query::WorldQuery;
 use bevy_ecs::{component::Component, prelude::*, system::SystemParam, world::unsafe_world_cell::UnsafeWorldCell};
 use bevy_mod_index::prelude::*;
 use bevy_utils::hashbrown::HashSet;
@@ -16,7 +17,14 @@ type ROQueryItem<'a, Q> = <Q as DBQueryInfo>::ReadOnlyItem<'a>;
 
 // type ROQueryItem<'a, Q> = QueryItem<'a, <Q as DBQueryInfo>::ReadOnly>;
 
+pub trait ReturnSelector<'w> {
+    type ReturnItem;
 
+    fn load_components_from_entities(
+        world: UnsafeWorldCell<'w>,
+        entities: Vec<Entity>,
+    ) -> Vec<Self::ReturnItem>;
+}
 
 pub type DatabaseConnection<'a, D> = <D as DatabaseResource>::DatabaseConnection<'a>;
 
@@ -33,8 +41,11 @@ pub trait DBQueryInfo {
     fn get_mut<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()>;
     fn update_component<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()>;
     fn insert_component<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()>;
-    fn load_components<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, 
-        get_comp_from_db: impl FnOnce(DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>) -> Result<Vec<Self::ReadOnlyItem<'w>>, ()>;
+    fn load_components<'w, R : ReturnSelector<'w>>(
+        db: &Self::Database, 
+        world: UnsafeWorldCell<'w>, 
+        get_comp_from_db: impl FnOnce(DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>
+    ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()>;
     fn create<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, component: Self::DerefItem) -> Result<(), ()>;
 }
 
@@ -42,7 +53,7 @@ pub trait DBQueryInfo {
 pub type DBQueryItem<'a, Q> = <Q as DBQueryInfo>::Item<'a>;
 
 pub struct QueryFetchState<'w, 's, I: DBQueryInfo + 'static> {
-    db_state: <ResMut<'w, I::Database> as SystemParam>::State,
+    db_state: <Res<'w, I::Database> as SystemParam>::State,
     phantom: std::marker::PhantomData<&'s ()>,
 }
 
@@ -69,7 +80,7 @@ where
         }
 
         QueryFetchState {
-            db_state: <ResMut<'w, <I as DBQueryInfo>::Database>>::init_state(world, system_meta),
+            db_state: <Res<'w, <I as DBQueryInfo>::Database>>::init_state(world, system_meta),
             phantom: std::marker::PhantomData,
         }
     }
@@ -112,8 +123,8 @@ impl<'w, 's, Q: DBQueryInfo> Query<'w, 's, Q> {
         Q::insert_component(& self.db, self.world, db_entity, component)
     }
 
-    pub fn load_components(& self, get_comp_from_db: impl FnOnce(DatabaseConnection<Q::Database>) -> Result<Vec<(DatabaseEntity, Q::DerefItem)>, ()>) -> Result<Vec<Q::ReadOnlyItem<'_>>, ()> {
-        Q::load_components(& self.db, self.world, get_comp_from_db)
+    pub fn load_components<R : ReturnSelector<'w>>(& self, get_comp_from_db: impl FnOnce(DatabaseConnection<Q::Database>) -> Result<Vec<(DatabaseEntity, Q::DerefItem)>, ()>) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()> {
+        Q::load_components::<R>(& self.db, self.world, get_comp_from_db)
     }
 
     pub fn create(& self, component: Q::DerefItem) -> Result<(), ()> {
@@ -236,10 +247,13 @@ where
         )
     }
 
-    fn load_components<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, 
-        get_comp_from_db: impl FnOnce(DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>) -> Result<Vec<Self::ReadOnlyItem<'w>>, ()> {
+    fn load_components<'w, R : ReturnSelector<'w>>(
+        db: &Self::Database, 
+        world: UnsafeWorldCell<'w>, 
+        get_comp_from_db: impl FnOnce(DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>
+    ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()> {
         Ok(
-            SingleComponentRetriever::<T, Self::Database>::load_components(db, world, get_comp_from_db)?
+            SingleComponentRetriever::<T, Self::Database>::load_components::<R>(db, world, get_comp_from_db)?
         )
     }
 
@@ -289,10 +303,13 @@ where
         )
     }
 
-    fn load_components<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, 
-        get_comp_from_db: impl FnOnce(DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()> ) -> Result<Vec<Self::ReadOnlyItem<'w>>, ()> {
+    fn load_components<'w, R : ReturnSelector<'w>>(
+        db: &Self::Database, 
+        world: UnsafeWorldCell<'w>, 
+        get_comp_from_db: impl FnOnce(DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>
+    ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()> {
         Ok(
-            SingleComponentRetriever::<T, Self::Database>::load_components(db, world, get_comp_from_db)?
+            SingleComponentRetriever::<T, Self::Database>::load_components::<R>(db, world, get_comp_from_db)?
         )
     }
 
@@ -363,8 +380,11 @@ macro_rules! simple_composition_of_db_queries {
             }
 
             // CODE SMELL: probably should split up interface to avoid this method
-            fn load_components<'w>(_db: &Self::Database, _world: UnsafeWorldCell<'w>, 
-            _get_comp_from_db: impl FnOnce(DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>) -> Result<Vec<Self::ReadOnlyItem<'w>>, ()> {
+            fn load_components<'w, R : ReturnSelector<'w>>(
+                db: &Self::Database, 
+                world: UnsafeWorldCell<'w>, 
+                get_comp_from_db: impl FnOnce(DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>
+            ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()> {
                 unimplemented!()
             }
 
@@ -509,6 +529,124 @@ where <MyMapper as ComponentMapper>::Component: Component
 
 }
 
+/**
+ * Return selector to grab the Database entity and the component
+ */
+// impl<'w, C: Component> ReturnSelector<'w> for (&DatabaseEntity, &C) 
+// where 
+// {
+//     type ReturnItem = (Entity, &'w C);
+
+//     fn load_components_from_entities(
+//         world: UnsafeWorldCell<'w>,
+//         entities: Vec<Entity>,
+//     ) -> Vec<Self::ReturnItem> {
+//         entities
+//             .into_iter()
+//             .map(|entity| {
+//                 let component = unsafe { world.world().get::<C>(entity).unwrap() };
+//                 (entity, component)
+//             })
+//             .collect()
+//     }
+
+// }
+
+/*
+ * Return selector to grab the Database entity and the component mut
+ */
+
+// impl<'w, C: Component> ReturnSelector<'w> for (&DatabaseEntity, &mut C)
+// where 
+// {
+//     type ReturnItem = (&'w DatabaseEntity, Mut<'w, C>);
+
+//     fn load_components_from_entities(
+//         world: UnsafeWorldCell<'w>,
+//         entities: Vec<Entity>,
+//     ) -> Vec<Self::ReturnItem> {
+//         entities
+//             .into_iter()
+//             .map(|entity| {
+//                 unsafe {
+//                     let world = world.world_mut();
+//                     let mut q = world.query::<(&DatabaseEntity, &mut C)>();
+//                     q.get_mut(world, entity).unwrap()
+//                 }
+//             })
+//             .collect()
+//     }
+
+// }
+
+impl<'w, C: WorldQuery> ReturnSelector<'w> for C
+{
+    type ReturnItem = C::Item<'w>;
+
+    fn load_components_from_entities(
+        world: UnsafeWorldCell<'w>,
+        entities: Vec<Entity>,
+    ) -> Vec<Self::ReturnItem> {
+        entities
+            .into_iter()
+            .map(|entity| {
+                unsafe {
+                    let world = world.world_mut();
+                    let mut q = world.query::<C>();
+                    q.get_mut(world, entity).unwrap()
+                }
+            })
+            .collect()
+    }
+
+}
+
+/**
+ * Return selector to grab just the component
+ */
+// impl<'w, C: Component> ReturnSelector<'w> for &C 
+// where 
+// {
+//     type ReturnItem = &'w C;
+
+//     fn load_components_from_entities(
+//         world: UnsafeWorldCell<'w>,
+//         entities: Vec<Entity>,
+//     ) -> Vec<Self::ReturnItem> {
+//         entities
+//             .into_iter()
+//             .map(|entity| {
+//                 unsafe { world.world().get::<C>(entity).unwrap() }
+//             })
+//             .collect()
+//     }
+
+// }
+
+// /**
+//  * Return selector to grab the component mut
+//  */
+
+// impl<'w, C: Component> ReturnSelector<'w> for &mut C
+// where 
+// {
+//     type ReturnItem = Mut<'w, C>;
+
+//     fn load_components_from_entities(
+//         world: UnsafeWorldCell<'w>,
+//         entities: Vec<Entity>,
+//     ) -> Vec<Self::ReturnItem> {
+//         entities
+//             .into_iter()
+//             .map(|entity| {
+//                 unsafe { world.world_mut().get_mut::<C>(entity).unwrap() }
+//             })
+//             .collect()
+//     }
+
+// }
+
+
 
 
 impl<MyMapper : ComponentMapper> DBQueryInfo for SingleComponentRetriever<MyMapper, AnyDatabaseResource> 
@@ -563,16 +701,15 @@ where
         block_on(MyMapper::insert_component(&mut **tr, db_entity, component))
     }
 
-    fn load_components<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, 
-        get_comp_from_db: impl FnOnce(DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>) -> Result<Vec<Self::ReadOnlyItem<'w>>, ()> {
+    fn load_components<'w, R : ReturnSelector<'w>>(
+        db: &Self::Database, 
+        world: UnsafeWorldCell<'w>, 
+        get_comp_from_db: impl FnOnce(DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>
+    ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()> {
 
         let entities = Self::load_entities_for_components(db, world, get_comp_from_db)?;
 
-        let components = entities
-            .into_iter()
-            .map(|entity| unsafe { world.world().get::<<MyMapper as ComponentMapper>::Component>(entity).unwrap() })
-            .collect::<Vec<Self::ReadOnlyItem<'w>>>();
-
+        let components = R::load_components_from_entities(world, entities);
         Ok(components)
     }
 

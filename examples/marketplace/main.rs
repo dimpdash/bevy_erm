@@ -45,7 +45,7 @@ fn get_seller_items(
     println!("get seller items system");
     for event in events.read() {
         let seller = event.seller;
-        let items = db_query.load_components(ItemQuery::load_items_of_seller(seller));
+        let items = db_query.load_components::<&MarketItem>(ItemQuery::load_items_of_seller(seller));
         println!("seller items: {:?}", items);
     }
 }
@@ -66,7 +66,7 @@ fn purchase_system(
     }
 }
 
-fn create_tables(db: ResMut<AnyDatabaseResource>) {
+fn create_tables(db: Res<AnyDatabaseResource>) {
     let db_handle = db.get_connection();
     let conn = &(*db_handle).write().unwrap().pool;
 
@@ -115,13 +115,8 @@ fn create_tables(db: ResMut<AnyDatabaseResource>) {
     });
 }
 
-fn print_items_table( mut items: DatabaseQuery<&ItemQuery>, db_entity_query : Query<&DatabaseEntity>) {
-    let items = items.load_components(ItemQuery::load_all())
-    
-    let items = items.load_components_and_entity(ItemQuery::load_all()).unwrap().into_iter().map(| (entity, item) | {
-        let db_entity = db_entity_query.get(entity).unwrap();
-        (db_entity, item)
-    }).collect::<Vec<_>>();
+fn print_items_table(items: DatabaseQuery<&ItemQuery>) {
+    let items = items.load_components::<(&DatabaseEntity, &MarketItem)>(ItemQuery::load_all()).unwrap();
 
     let mut items_table = prettytable::Table::new();
     items_table.add_row(row!["id", "seller_id", "name", "price"]);
@@ -133,11 +128,8 @@ fn print_items_table( mut items: DatabaseQuery<&ItemQuery>, db_entity_query : Qu
     items_table.printstd();
 }
 
-fn print_purchased_items_table( mut purchased_items: DatabaseQuery<&PurchaseItemQuery>, db_entity_query : Query<&DatabaseEntity>) {
-    let purchased_items = purchased_items.load_components_and_entity(PurchaseItemQuery::load_all()).unwrap().into_iter().map(| (entity, item) | {
-        let db_entity = db_entity_query.get(entity).unwrap();
-        (db_entity, item)
-    }).collect::<Vec<_>>();
+fn print_purchased_items_table(purchased_items: DatabaseQuery<&PurchaseItemQuery>) {
+    let purchased_items: Vec<(&DatabaseEntity, &PurchasedItem)> = purchased_items.load_components::<(&DatabaseEntity, &PurchasedItem)>(PurchaseItemQuery::load_all()).unwrap();
 
     let mut purchased_items_table = prettytable::Table::new();
     purchased_items_table.add_row(row!["id", "item", "buyer"]);
@@ -149,30 +141,19 @@ fn print_purchased_items_table( mut purchased_items: DatabaseQuery<&PurchaseItem
     purchased_items_table.printstd();
 }
 
-fn print_tables(mut users : DatabaseQuery<&UserQuery>, mut items: DatabaseQuery<&ItemQuery>, mut purchased_items: DatabaseQuery<&PurchaseItemQuery>, mut buyers: DatabaseQuery<&BuyerQuery>, mut sellers: DatabaseQuery<&SellerQuery>, db_entity_query : Query<&DatabaseEntity>) {
+fn print_users_table(users : DatabaseQuery<&UserQuery>, buyers: DatabaseQuery<&BuyerQuery>, sellers: DatabaseQuery<&SellerQuery>) {
     let users = {
-        let users = users.load_components_and_entity(UserQuery::load_all()).unwrap();
+        let users = users.load_components::<(Entity, &DatabaseEntity, &User)>(UserQuery::load_all()).unwrap();
 
-        let buyers = buyers.load_components_and_entity(BuyerQuery::load_all()).unwrap();
-        let sellers = sellers.load_components_and_entity(SellerQuery::load_all()).unwrap();
+        let buyers = buyers.load_components::<(Entity, &Buyer)>(BuyerQuery::load_all()).unwrap();
+        let sellers = sellers.load_components::<(Entity, &Seller)>(SellerQuery::load_all()).unwrap();
         
-        users.into_iter().map(|(entity, user)| {
+        users.into_iter().map(|(entity, db_entity, user)| {
             let buyer = buyers.iter().find(|(buyer_entity, _) | buyer_entity == &entity).is_some();
             let seller = sellers.iter().find(|(seller_entity, _) | seller_entity == &entity).is_some();
-            let db_entity = db_entity_query.get(entity).unwrap();
             (db_entity, user, buyer, seller)
         }).collect::<Vec<_>>()
     };
-    let items = items.load_components_and_entity(ItemQuery::load_all()).unwrap().into_iter().map(| (entity, item) | {
-        let db_entity = db_entity_query.get(entity).unwrap();
-        (db_entity, item)
-    }).collect::<Vec<_>>();
-    let purchased_items = purchased_items.load_components_and_entity(PurchaseItemQuery::load_all()).unwrap().into_iter().map(| (entity, item) | {
-        let db_entity = db_entity_query.get(entity).unwrap();
-        (db_entity, item)
-    }).collect::<Vec<_>>();
-
-
 
     let mut users_table = prettytable::Table::new();
     users_table.add_row(row!["id", "name", "buyer", "seller"]);
@@ -180,28 +161,8 @@ fn print_tables(mut users : DatabaseQuery<&UserQuery>, mut items: DatabaseQuery<
         users_table.add_row(row![db_entity.id, user.name, buyer, seller]);
     }
 
-    let mut items_table = prettytable::Table::new();
-    items_table.add_row(row!["id", "seller_id", "name", "price"]);
-    for (db_entity, item) in items {
-        items_table.add_row(row![db_entity.id, item.seller_id.id, item.name, item.price]);
-    }
-
-    let mut purchased_items_table = prettytable::Table::new();
-    purchased_items_table.add_row(row!["id", "item", "buyer"]);
-    for (db_entity, item) in purchased_items {
-        purchased_items_table.add_row(row![db_entity.id, item.item.id, item.buyer.id]);
-    }
-
     println!("Users");
     users_table.printstd();
-    println!("Items");
-    items_table.printstd();
-    println!("Purchased Items");
-    purchased_items_table.printstd();
-
-
-   
-
 }
 
 fn events_available<E: Event>(mut events: EventReader<E>) -> bool {
@@ -254,7 +215,7 @@ fn preload_events(mut purchase_events: EventWriter<Purchase>,
         });
 }
 
-fn commit_transaction(db: ResMut<AnyDatabaseResource>){
+fn commit_transaction(db: Res<AnyDatabaseResource>){
     block_on(async {
         let db_handle = db.get_connection();
         let tr_option = &mut (*db_handle).write().unwrap().tr;
@@ -263,7 +224,7 @@ fn commit_transaction(db: ResMut<AnyDatabaseResource>){
     });
 }
 
-fn start_new_transaction(db: ResMut<AnyDatabaseResource>){
+fn start_new_transaction(db: Res<AnyDatabaseResource>){
     block_on(async {
         let db_handle = db.get_connection();
         let new_transaction = {
@@ -319,6 +280,7 @@ fn runner(mut app: App) {
     let mut end_schedule = Schedule::default();
     end_schedule.add_systems(print_purchased_items_table);
     end_schedule.add_systems(print_items_table);
+    end_schedule.add_systems(print_users_table);
     end_schedule.run(&mut app.world);
 }
 
