@@ -134,7 +134,7 @@ fn print_items_table(items: DatabaseQuery<&ItemQuery>, print_table: EventReader<
         return;
     }
     let items = items
-        .load_components::<(&DatabaseEntity, &MarketItem)>(ItemQuery::load_all(-1))
+        .load_components::<(&DatabaseEntity, &MarketItem)>(ItemQuery::load_all(RequestId(-1)))
         .unwrap();
 
     let mut items_table = prettytable::Table::new();
@@ -155,7 +155,7 @@ fn print_purchased_items_table(
         return;
     }
     let purchased_items: Vec<(&DatabaseEntity, &PurchasedItem)> = purchased_items
-        .load_components::<(&DatabaseEntity, &PurchasedItem)>(PurchaseItemQuery::load_all(-1))
+        .load_components::<(&DatabaseEntity, &PurchasedItem)>(PurchaseItemQuery::load_all(RequestId(-1)))
         .unwrap();
 
     let mut purchased_items_table = prettytable::Table::new();
@@ -179,14 +179,14 @@ fn print_users_table(
     }
     let users = {
         let users = users
-            .load_components::<(Entity, &DatabaseEntity, &User)>(UserQuery::load_all(-1))
+            .load_components::<(Entity, &DatabaseEntity, &User)>(UserQuery::load_all(RequestId(-1)))
             .unwrap();
 
         let buyers = buyers
-            .load_components::<(Entity, &Buyer)>(BuyerQuery::load_all(-1))
+            .load_components::<(Entity, &Buyer)>(BuyerQuery::load_all(RequestId(-1)))
             .unwrap();
         let sellers = sellers
-            .load_components::<(Entity, &Seller)>(SellerQuery::load_all(-1))
+            .load_components::<(Entity, &Seller)>(SellerQuery::load_all(RequestId(-1)))
             .unwrap();
 
         users
@@ -260,9 +260,9 @@ fn preload_events(
     // create two purchase events
 
     let purchase_event = Purchase {
-        purchaser: PURCHASER_ID,
-        item: MARKET_ITEM_ID,
-        request: 0,
+        purchaser: DatabaseEntityId(PURCHASER_ID),
+        item: DatabaseEntityId(MARKET_ITEM_ID),
+        request: RequestId(0),
     };
 
     println!(
@@ -272,9 +272,9 @@ fn preload_events(
     purchase_events.send(purchase_event);
 
     let purchase_event = Purchase {
-        purchaser: PURCHASER_ID,
-        item: MARKET_ITEM_ID,
-        request: 1,
+        purchaser: DatabaseEntityId(PURCHASER_ID),
+        item: DatabaseEntityId(MARKET_ITEM_ID),
+        request: RequestId(1),
     };
 
     println!(

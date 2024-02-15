@@ -349,7 +349,7 @@ impl ItemQuery {
         move |conn: &mut sqlx::SqliteConnection| {
             let items = block_on(
                 sqlx::query("SELECT id, seller_id, name, price FROM items WHERE seller_id = ?")
-                    .bind(seller.id)
+                    .bind(seller.id.0)
                     .fetch_all(conn),
             )
             .unwrap();
@@ -547,7 +547,7 @@ impl ComponentMapper for PurchaseItemQuery {
             db_entity, component.item, component.buyer
         );
         let r = sqlx::query("INSERT INTO purchased_items (id, item, buyer) VALUES (?, ?, ?)")
-            .bind(db_entity)
+            .bind(db_entity.0)
             .bind(component.item)
             .bind(component.buyer)
             .execute(tr)

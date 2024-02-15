@@ -1,6 +1,7 @@
 use std::sync::{Arc, RwLock};
 
 use bevy_ecs::prelude::*;
+use bevy_utils::petgraph::visit::Data;
 use futures::executor::block_on;
 use sqlx::Transaction;
 
@@ -16,7 +17,7 @@ pub trait DatabaseResource: Resource + Default {
 
     fn get_connection(&self) -> Arc<RwLock<DatabaseHandle>>;
     // A way to get a unique key for the database
-    fn get_key(&self) -> i64;
+    fn get_key(&self) -> DatabaseEntityId;
 }
 
 #[derive(Debug)]
@@ -61,10 +62,10 @@ impl DatabaseResource for AnyDatabaseResource {
     // Rather than actually querying the database for key just hold on to the last key we had to issue
     // This is a bit of a hack but it's fine for now. As POC and only considering one machine
     // It is progressing into the negatives so that instantiating any objects with positive keys will not conflict
-    fn get_key(&self) -> i64 {
+    fn get_key(&self) -> DatabaseEntityId {
         let mut db = self.db.write().unwrap();
         db.min_key -= 1;
-        db.min_key
+        DatabaseEntityId(db.min_key)
     }
 }
 

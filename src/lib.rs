@@ -10,7 +10,8 @@ pub use database_resource::*;
 pub use plugin::*;
 
 
-pub type RequestId = i64;
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Debug, Default)]    
+pub struct RequestId(pub i64);
 
 #[derive(Event)]
 pub struct FlushEvent{

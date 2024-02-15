@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use bevy_ecs::{component::Component, prelude::*};
 use bevy_mod_index::prelude::*;
 use bevy_utils::petgraph::visit::Data;
@@ -8,7 +10,7 @@ pub struct DatabaseEntityIndex;
 impl IndexInfo for DatabaseEntityIndex {
     type Component = DatabaseEntity;
 
-    type Value = i64;
+    type Value = DatabaseEntityId;
 
     type Storage = NoStorage<Self>;
 
@@ -47,9 +49,17 @@ impl From<Persisted> for bool {
     }
 }
 
-pub type DatabaseEntityId = i64;
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Debug, Default, Hash, sqlx::Type)]    
+#[sqlx(transparent)]
+pub struct DatabaseEntityId(pub i64);
 
-#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Component, Debug, Default, sqlx::FromRow)]
+impl Display for DatabaseEntityId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "DatabaseEntityId({})", self.0)
+    }
+}
+
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Component, Debug, Default)]
 pub struct DatabaseEntity {
     pub id: DatabaseEntityId,
 
@@ -57,13 +67,10 @@ pub struct DatabaseEntity {
     // When creating an entity it will only be in memory and not have
     // been entered into the database yet, so will need to be inserted instead
     // updated
-    #[sqlx(skip)]
     pub persisted: Persisted,
 
-    #[sqlx(skip)]
     pub dirty: bool,
 
-    #[sqlx(skip)]
     // The request the database entity belongs to
     pub request: RequestId,
 }
