@@ -68,17 +68,16 @@ impl DatabaseResource for AnyDatabaseResource {
     }
 }
 
-#[derive(Event)]
-pub struct FlushEvent();
+
 
 pub fn flush_component_to_db<T: ComponentMapper>(
-    mut flush_event: EventReader<FlushEvent>,
+    mut flush_events: EventReader<FlushEvent>,
     query: Query<(&DatabaseEntity, &<T as ComponentMapper>::Component)>,
     db_query: DatabaseQuery<&T>,
 ) where
     <T as ComponentMapper>::Component: bevy_ecs::component::Component,
 {
-    if !flush_event.is_empty() {
+    for flush_event in flush_events.read() { 
         for (db_entity, component) in query.iter() {
             db_query
                 .update_or_insert_component(db_entity, component)
@@ -86,6 +85,5 @@ pub fn flush_component_to_db<T: ComponentMapper>(
         }
 
         println!("Clearing flush event");
-        flush_event.clear();
     }
 }

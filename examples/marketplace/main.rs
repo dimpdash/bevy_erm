@@ -221,10 +221,9 @@ fn flush_purchase(
     mut purchase_events: EventReader<PurchaseResponse>,
     mut flush: EventWriter<FlushEvent>,
 ) {
-    if !purchase_events.is_empty() {
+    for purchase_event in purchase_events.read() {
         println!("Flushing purchase events");
-        flush.send(FlushEvent());
-        purchase_events.clear();
+        flush.send(FlushEvent{request: purchase_event.request});
     }
 }
 
