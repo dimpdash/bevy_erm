@@ -6,7 +6,7 @@ use bevy_erm::*;
 #[macro_use]
 extern crate prettytable;
 
-use bevy_app::prelude::*;
+use bevy_app::{prelude::*, AppExit};
 use components::*;
 use futures::executor::block_on;
 use queries::*;
@@ -266,7 +266,8 @@ impl Plugin for MarketplacePlugin {
             .add_systems(Update, start_new_transaction.after(commit_transaction))
             .add_systems(PostUpdate, print_items_table)
             .add_systems(PostUpdate, print_users_table)
-            .add_systems(PostUpdate, print_purchased_items_table);
+            .add_systems(PostUpdate, print_purchased_items_table)
+            .add_systems(PostUpdate, should_exit);
     }
 }
 
@@ -310,6 +311,12 @@ fn preload_events(
     // get_seller_items.send(get_seller_items_event);
 
     println!("");
+}
+
+fn should_exit(mut purchase_events: EventReader<PurchaseResponse>, mut exit: EventWriter<AppExit>) {
+    if !purchase_events.is_empty() {
+        exit.send(AppExit);
+    }
 }
 
 fn commit_transaction(db: Res<AnyDatabaseResource>, flush_event: EventReader<FlushEvent>) {
