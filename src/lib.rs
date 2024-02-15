@@ -10,8 +10,8 @@ pub use database_resource::*;
 pub use plugin::*;
 
 
-#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Debug, Default)]    
-pub struct RequestId(pub i64);
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Debug)]    
+pub struct RequestId(pub generational_arena::Index);
 
 #[derive(Event)]
 pub struct FlushEvent{

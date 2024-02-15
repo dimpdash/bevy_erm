@@ -59,7 +59,7 @@ impl Display for DatabaseEntityId {
     }
 }
 
-#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Component, Debug, Default)]
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Component, Debug)]
 pub struct DatabaseEntity {
     pub id: DatabaseEntityId,
 

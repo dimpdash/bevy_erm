@@ -13,8 +13,7 @@ impl EntityRelationMapperPlugin {
     pub fn new() -> Self {
         let mut flush_schedule = Schedule::new(PostUpdate);
         flush_schedule
-            .add_systems(commit_transaction)
-            .add_systems(start_new_transaction.after(commit_transaction));
+            .add_systems(commit_transaction);
         EntityRelationMapperPlugin {
             flush_schedule: RwLock::new(Some(flush_schedule)),
         }
@@ -43,17 +42,10 @@ impl Plugin for EntityRelationMapperPlugin {
     }
 }
 
-fn commit_transaction(db: Res<AnyDatabaseResource>, flush_event: EventReader<FlushEvent>) {
-    if flush_event.is_empty() {
-        return;
+fn commit_transaction(db: Res<AnyDatabaseResource>, mut flush_events: EventReader<FlushEvent>) {
+    for flush_event in flush_events.read() {
+        db.commit_transaction(flush_event.request);
     }
-
-    block_on(async {
-        let db_handle = db.get_connection();
-        let tr_option = &mut (*db_handle).write().unwrap().tr;
-        let tr = tr_option.take().unwrap();
-        tr.commit().await.unwrap();
-    });
 }
 
 fn start_new_transaction(db: Res<AnyDatabaseResource>, flush_event: EventReader<FlushEvent>) {
@@ -61,13 +53,5 @@ fn start_new_transaction(db: Res<AnyDatabaseResource>, flush_event: EventReader<
         return;
     }
 
-    block_on(async {
-        let db_handle = db.get_connection();
-        let new_transaction = {
-            let pool = &(*db_handle).write().unwrap().pool;
-            pool.begin().await.unwrap()
-        };
-        let tr_option = &mut (*db_handle).write().unwrap().tr;
-        *tr_option = Some(new_transaction);
-    });
+    let _ = db.start_new_transaction();
 }

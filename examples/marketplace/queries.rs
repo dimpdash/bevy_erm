@@ -391,7 +391,7 @@ impl ComponentMapper for ItemQuery {
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
-        let item = sqlx::query_as::<_, MarketItem>("SELECT item FROM items WHERE id = ?")
+        let item = sqlx::query_as::<_, MarketItem>("SELECT * FROM items WHERE id = ?")
             .bind(db_entity)
             .fetch_one(conn)
             .await

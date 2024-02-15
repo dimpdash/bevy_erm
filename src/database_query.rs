@@ -1,3 +1,5 @@
+use std::borrow::BorrowMut;
+
 use crate::*;
 use async_trait::async_trait;
 use bevy_ecs::query::WorldQuery;
@@ -59,6 +61,7 @@ pub trait DBQueryInfo {
     fn load_components<'w, R: ReturnSelector<'w>>(
         db: &Self::Database,
         world: UnsafeWorldCell<'w>,
+        request: RequestId,
         get_comp_from_db: impl FnOnce(
             DatabaseConnection<Self::Database>,
         ) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>,
@@ -162,11 +165,12 @@ impl<'w, 's, Q: DBQueryInfo> DatabaseQuery<'w, 's, Q> {
 
     pub fn load_components<R: ReturnSelector<'w>>(
         &self,
+        request: RequestId,
         get_comp_from_db: impl FnOnce(
             DatabaseConnection<Q::Database>,
         ) -> Result<Vec<(DatabaseEntity, Q::DerefItem)>, ()>,
     ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()> {
-        Q::load_components::<R>(&self.db, self.world, get_comp_from_db)
+        Q::load_components::<R>(&self.db, self.world, request, get_comp_from_db)
     }
 
     pub fn create(&self, component: Q::DerefItem, request: RequestId) -> Result<(), ()> {
@@ -307,6 +311,7 @@ where
     fn load_components<'w, R: ReturnSelector<'w>>(
         db: &Self::Database,
         world: UnsafeWorldCell<'w>,
+        request: RequestId,
         get_comp_from_db: impl FnOnce(
             DatabaseConnection<Self::Database>,
         ) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>,
@@ -314,6 +319,7 @@ where
         SingleComponentRetriever::<T, Self::Database>::load_components::<R>(
             db,
             world,
+            request,
             get_comp_from_db,
         )
     }
@@ -381,6 +387,7 @@ where
     fn load_components<'w, R: ReturnSelector<'w>>(
         db: &Self::Database,
         world: UnsafeWorldCell<'w>,
+        request: RequestId,
         get_comp_from_db: impl FnOnce(
             DatabaseConnection<Self::Database>,
         ) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>,
@@ -388,6 +395,7 @@ where
         SingleComponentRetriever::<T, Self::Database>::load_components::<R>(
             db,
             world,
+            request,
             get_comp_from_db,
         )
     }
@@ -465,6 +473,7 @@ macro_rules! simple_composition_of_db_queries {
             fn load_components<'w, R : ReturnSelector<'w>>(
                 _db: &Self::Database,
                 _world: UnsafeWorldCell<'w>,
+                _request: RequestId,
                 _get_comp_from_db: impl FnOnce(DatabaseConnection<Self::Database>) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>
             ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()> {
                 unimplemented!()
@@ -514,12 +523,7 @@ where
         db_entity: &D,
         component_preloaded: Option<<MyMapper as ComponentMapper>::Component>,
     ) -> Entity {
-        // let conn = self.db.get_transaction();
-        // using the database entity index
-        // fetch from resource
-        let db_handle = db.get_connection();
-        let tr_option = &mut (*db_handle).write().unwrap().tr;
-        let conn = tr_option.as_mut().unwrap();
+        get_transaction!(tr, db_entity.request(), db);
 
         let db_entity_id = *db_entity.id();
 
@@ -546,7 +550,7 @@ where
                     None => {
                         let db_component = match component_preloaded {
                             Some(component) => component,
-                            None => block_on(MyMapper::get(&mut **conn, &db_entity.id())).unwrap(),
+                            None => block_on(MyMapper::get(&mut **tr, &db_entity.id())).unwrap(),
                         };
                         // write the component to the entity
                         unsafe {
@@ -561,7 +565,7 @@ where
             None => {
                 let component = match component_preloaded {
                     Some(component) => component,
-                    None => block_on(MyMapper::get(&mut **conn, &db_entity.id())).unwrap(),
+                    None => block_on(MyMapper::get(&mut **tr, &db_entity.id())).unwrap(),
                 };
                 unsafe {
                     let w = world.world_mut();
@@ -585,6 +589,7 @@ where
     pub fn load_entities_for_components(
         db: &AnyDatabaseResource,
         world: UnsafeWorldCell<'_>,
+        request: RequestId,
         get_comp_from_db: impl FnOnce(
             DatabaseConnection<AnyDatabaseResource>,
         ) -> Result<
@@ -592,16 +597,10 @@ where
             (),
         >,
     ) -> Result<Vec<Entity>, ()> {
-        // let conn = self.db.get_transaction();
-        // using the database entity index
-        // fetch from resource
 
         let components = {
-            let db_handle = db.get_connection();
-            let tr_option = &mut (*db_handle).write().unwrap().tr;
-            let conn = tr_option.as_mut().unwrap();
-
-            get_comp_from_db(conn)?
+            get_transaction!(tr, request, db);
+            get_comp_from_db(&mut *tr)?
         };
 
         let entities = components
@@ -689,9 +688,7 @@ where
         db_entity: &DatabaseEntity,
         component: Self::ReadOnlyItem<'w>,
     ) -> Result<(), ()> {
-        let db_handle = db.get_connection();
-        let tr_option = &mut (*db_handle).write().unwrap().tr;
-        let tr = tr_option.as_mut().unwrap();
+        get_transaction!(tr, db_entity.request, db);
 
         block_on(MyMapper::update_component(&mut **tr, db_entity.id(), component))
     }
@@ -702,9 +699,7 @@ where
         db_entity: &DatabaseEntity,
         component: Self::ReadOnlyItem<'w>,
     ) -> Result<(), ()> {
-        let db_handle = db.get_connection();
-        let tr_option = &mut (*db_handle).write().unwrap().tr;
-        let tr = tr_option.as_mut().unwrap();
+        get_transaction!(tr, db_entity.request, db);
 
         block_on(MyMapper::insert_component(&mut **tr, db_entity.id(), component))
     }
@@ -712,11 +707,12 @@ where
     fn load_components<'w, R: ReturnSelector<'w>>(
         db: &Self::Database,
         world: UnsafeWorldCell<'w>,
+        request: RequestId,
         get_comp_from_db: impl FnOnce(
             DatabaseConnection<Self::Database>,
         ) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>,
     ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()> {
-        let entities = Self::load_entities_for_components(db, world, get_comp_from_db)?;
+        let entities = Self::load_entities_for_components(db, world, request, get_comp_from_db)?;
 
         let components = R::load_components_from_entities(world, entities);
         Ok(components)

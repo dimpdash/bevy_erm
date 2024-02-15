@@ -21,6 +21,7 @@ casey = "0.4.0"
 futures = "0.3.30"
 sqlx = { version = "0.7.3", features = ["sqlite", "runtime-tokio"] }
 tokio = { version = "1.36.0", features = ["full"] }
+generational-arena = "0.2.9"
 
 [dev-dependencies]
 prettytable-rs = "0.10.0"
