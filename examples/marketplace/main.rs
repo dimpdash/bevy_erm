@@ -210,12 +210,6 @@ fn print_users_table(
     users_table.printstd();
 }
 
-fn events_available<E: Event>(mut events: EventReader<E>) -> bool {
-    let not_empty = !events.is_empty();
-    events.clear(); // prevent old events from retriggering as weren't read
-    not_empty
-}
-
 const PURCHASER_ID: i64 = 1;
 const SELLER_ID: i64 = 2;
 const MARKET_ITEM_ID: i64 = 3;
@@ -237,8 +231,7 @@ impl Plugin for MarketplacePlugin {
             .add_event::<Sell>()
             .add_event::<GetSellerItems>()
             .add_event::<PurchaseResponse>()
-            .init_resource::<AnyDatabaseResource>()
-            .add_event::<FlushEvent>()
+
             .add_event::<PrintTable>()
 
             .add_systems(PreStartup, preload_events)
@@ -254,16 +247,6 @@ impl Plugin for MarketplacePlugin {
 
             .add_systems(Update, flush_purchase)
 
-            .add_systems(
-                Update,
-                flush_component_to_db::<PurchaseItemQuery>.before(commit_transaction),
-            )
-            .add_systems(
-                Update,
-                flush_component_to_db::<ItemQuery>.before(commit_transaction),
-            )
-            .add_systems(Update, commit_transaction)
-            .add_systems(Update, start_new_transaction.after(commit_transaction))
             .add_systems(PostUpdate, print_items_table)
             .add_systems(PostUpdate, print_users_table)
             .add_systems(PostUpdate, print_purchased_items_table)
@@ -319,38 +302,17 @@ fn should_exit(mut purchase_events: EventReader<PurchaseResponse>, mut exit: Eve
     }
 }
 
-fn commit_transaction(db: Res<AnyDatabaseResource>, flush_event: EventReader<FlushEvent>) {
-    if flush_event.is_empty() {
-        return;
-    }
 
-    block_on(async {
-        let db_handle = db.get_connection();
-        let tr_option = &mut (*db_handle).write().unwrap().tr;
-        let tr = tr_option.take().unwrap();
-        tr.commit().await.unwrap();
-    });
-}
-
-fn start_new_transaction(db: Res<AnyDatabaseResource>, flush_event: EventReader<FlushEvent>) {
-    if flush_event.is_empty() {
-        return;
-    }
-
-    block_on(async {
-        let db_handle = db.get_connection();
-        let new_transaction = {
-            let pool = &(*db_handle).write().unwrap().pool;
-            pool.begin().await.unwrap()
-        };
-        let tr_option = &mut (*db_handle).write().unwrap().tr;
-        *tr_option = Some(new_transaction);
-    });
-}
 
 #[tokio::main]
 async fn main() {
+    let mut erm_plugin = EntityRelationMapperPlugin::new();
+    erm_plugin
+        .add_flush_system(flush_component_to_db::<ItemQuery>)
+        .add_flush_system(flush_component_to_db::<UserQuery>);
+
     App::new()
+        .add_plugins(erm_plugin)
         .add_plugins(MarketplacePlugin)
         .run();
 }

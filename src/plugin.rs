@@ -1,4 +1,4 @@
-use std::{cell::RefCell, sync::RwLock};
+use std::sync::RwLock;
 
 use crate::*;
 use bevy_app::prelude::*;
@@ -6,54 +6,44 @@ use bevy_ecs::prelude::*;
 use futures::executor::block_on;
 
 pub struct EntityRelationMapperPlugin {
-    // use RwLock so can have interio mutability
-    // use option so can take ownership of it
-    pub config: RwLock<Option<EntityRelationalMapperConfig>>,
-}
-
-pub struct EntityRelationalMapperConfig {
-    // pub still_events_to_read: F,
-    pub flush_to_db_schedule: Schedule,
+    flush_schedule: RwLock<Option<Schedule>>,
 }
 
 impl EntityRelationMapperPlugin {
-    pub fn create_runner(
-        &self,
-        mut h: EntityRelationalMapperConfig,
-    ) -> impl FnOnce(App) + 'static + Send {
-        move |mut app: App| {
-            //TODO
-            // while (h.still_events_to_read)(&mut app.world) {
-            //     println!("===========================");
-            //     app.update();
-            // }
-            // println!("===========================");
+    pub fn new() -> Self {
 
-            // (h.flush_to_db_schedule).run(&mut app.world);
-
-            // let mut commit_schedule = Schedule::default();
-            // commit_schedule.add_systems(commit_transaction);
-            // commit_schedule.run(&mut app.world);
-
-            // println!("All Events Processed");
-
-            // let mut new_transation_schedule = Schedule::default();
-            // new_transation_schedule.add_systems(start_new_transaction);
-            // new_transation_schedule.run(&mut app.world);
+        let mut flush_schedule = Schedule::new(PostUpdate);
+        flush_schedule
+            .add_systems(commit_transaction)
+            .add_systems(start_new_transaction.after(commit_transaction));
+        EntityRelationMapperPlugin {
+            flush_schedule: RwLock::new(Some(flush_schedule)),
         }
+    }
+    pub fn add_flush_system<M>(&mut self, systems: impl IntoSystemConfigs<M>) -> &mut Self {
+        self.flush_schedule.write().unwrap().as_mut().unwrap().add_systems(systems.before(commit_transaction));
+
+        self
     }
 }
 
 impl Plugin for EntityRelationMapperPlugin {
     fn build(&self, app: &mut App) {
-        let holder = self.config.write().unwrap().take().unwrap();
+        let mut flush_schedule = self.flush_schedule.write().unwrap().take().unwrap();
 
-        app.set_runner(self.create_runner(holder))
+        flush_schedule.initialize(&mut app.world).unwrap();
+
+        app.add_event::<FlushEvent>()
+            .add_schedule(flush_schedule)
             .init_resource::<AnyDatabaseResource>();
     }
 }
 
-fn commit_transaction(db: Res<AnyDatabaseResource>) {
+fn commit_transaction(db: Res<AnyDatabaseResource>, flush_event: EventReader<FlushEvent>) {
+    if flush_event.is_empty() {
+        return;
+    }
+
     block_on(async {
         let db_handle = db.get_connection();
         let tr_option = &mut (*db_handle).write().unwrap().tr;
@@ -62,7 +52,11 @@ fn commit_transaction(db: Res<AnyDatabaseResource>) {
     });
 }
 
-fn start_new_transaction(db: Res<AnyDatabaseResource>) {
+fn start_new_transaction(db: Res<AnyDatabaseResource>, flush_event: EventReader<FlushEvent>) {
+    if flush_event.is_empty() {
+        return;
+    }
+
     block_on(async {
         let db_handle = db.get_connection();
         let new_transaction = {
