@@ -1,6 +1,5 @@
 use std::sync::{Arc, RwLock};
 
-use bevy_app::AppExit;
 use bevy_ecs::prelude::*;
 use futures::executor::block_on;
 use sqlx::Transaction;
@@ -75,7 +74,7 @@ pub struct FlushEvent();
 pub fn flush_component_to_db<T: ComponentMapper>(
     mut flush_event: EventReader<FlushEvent>,
     query: Query<(&DatabaseEntity, &<T as ComponentMapper>::Component)>,
-    db_query: DatabaseQuery<&T>
+    db_query: DatabaseQuery<&T>,
 ) where
     <T as ComponentMapper>::Component: bevy_ecs::component::Component,
 {

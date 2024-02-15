@@ -214,13 +214,15 @@ const PURCHASER_ID: i64 = 1;
 const SELLER_ID: i64 = 2;
 const MARKET_ITEM_ID: i64 = 3;
 
-fn flush_purchase(mut purchase_events: EventReader<PurchaseResponse>, mut flush: EventWriter<FlushEvent>) {
+fn flush_purchase(
+    mut purchase_events: EventReader<PurchaseResponse>,
+    mut flush: EventWriter<FlushEvent>,
+) {
     if !purchase_events.is_empty() {
         println!("Flushing purchase events");
         flush.send(FlushEvent());
         purchase_events.clear();
     }
-
 }
 
 pub struct MarketplacePlugin;
@@ -231,22 +233,15 @@ impl Plugin for MarketplacePlugin {
             .add_event::<Sell>()
             .add_event::<GetSellerItems>()
             .add_event::<PurchaseResponse>()
-
             .add_event::<PrintTable>()
-
             .add_systems(PreStartup, preload_events)
             .add_systems(Startup, create_tables)
-            
             .add_systems(Startup, print_tables.after(create_tables))
-            
             .add_systems(Startup, print_items_table.after(print_tables))
             .add_systems(Startup, print_users_table.after(print_tables))
             .add_systems(Startup, print_purchased_items_table.after(print_tables))
-
             .add_systems(Update, purchase_system)
-
             .add_systems(Update, flush_purchase)
-
             .add_systems(PostUpdate, print_items_table)
             .add_systems(PostUpdate, print_users_table)
             .add_systems(PostUpdate, print_purchased_items_table)
@@ -256,7 +251,7 @@ impl Plugin for MarketplacePlugin {
 
 fn preload_events(
     mut purchase_events: EventWriter<Purchase>,
-    mut get_seller_items: EventWriter<GetSellerItems>,
+    _get_seller_items: EventWriter<GetSellerItems>,
 ) {
     println!("Preloading events:");
 
@@ -293,16 +288,14 @@ fn preload_events(
     // );
     // get_seller_items.send(get_seller_items_event);
 
-    println!("");
+    println!();
 }
 
-fn should_exit(mut purchase_events: EventReader<PurchaseResponse>, mut exit: EventWriter<AppExit>) {
+fn should_exit(purchase_events: EventReader<PurchaseResponse>, mut exit: EventWriter<AppExit>) {
     if !purchase_events.is_empty() {
         exit.send(AppExit);
     }
 }
-
-
 
 #[tokio::main]
 async fn main() {

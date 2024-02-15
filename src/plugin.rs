@@ -11,7 +11,6 @@ pub struct EntityRelationMapperPlugin {
 
 impl EntityRelationMapperPlugin {
     pub fn new() -> Self {
-
         let mut flush_schedule = Schedule::new(PostUpdate);
         flush_schedule
             .add_systems(commit_transaction)
@@ -21,7 +20,12 @@ impl EntityRelationMapperPlugin {
         }
     }
     pub fn add_flush_system<M>(&mut self, systems: impl IntoSystemConfigs<M>) -> &mut Self {
-        self.flush_schedule.write().unwrap().as_mut().unwrap().add_systems(systems.before(commit_transaction));
+        self.flush_schedule
+            .write()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .add_systems(systems.before(commit_transaction));
 
         self
     }
