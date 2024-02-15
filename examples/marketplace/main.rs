@@ -13,8 +13,8 @@ use queries::*;
 
 #[derive(Event, Debug)]
 pub struct Purchase {
-    pub item: DatabaseEntity,
-    pub purchaser: DatabaseEntity,
+    pub item: DatabaseEntityId,
+    pub purchaser: DatabaseEntityId,
     pub request: RequestId,
 }
 
@@ -38,33 +38,33 @@ pub struct PurchaseResponse{
 }
 
 fn purchase_system(
-    mut events: EventReader<Purchase>,
+    mut purchases: EventReader<Purchase>,
     db_query_purchased: DatabaseQuery<&PurchaseItemQuery>,
     item_query: DatabaseQuery<&ItemQuery>,
     purchaser_query: DatabaseQuery<&UserQuery>,
     seller_query: DatabaseQuery<&UserQuery>,
     mut response: EventWriter<PurchaseResponse>,
 ) {
-    if events.is_empty() {
+    if purchases.is_empty() {
         return;
     }
     println!("Processing purchase events");
-    for event in events.read() {
-        let item = item_query.get(&event.item).unwrap();
-        let seller_name = seller_query.get(&item.seller_id).unwrap().name.clone();
-        let buyer_name = purchaser_query.get(&event.purchaser).unwrap().name.clone();
+    for purchase in purchases.read() {
+        let item = item_query.get(&(purchase.item, purchase.request)).unwrap();
+        let seller_name = seller_query.get(&(item.seller_id, purchase.request)).unwrap().name.clone();
+        let buyer_name = purchaser_query.get(&(purchase.purchaser, purchase.request)).unwrap().name.clone();
         println!(
             "\t{:} purchases {:} from {:}",
             buyer_name, item.name, seller_name
         );
         let purchased_item = PurchasedItem {
-            item: event.item,
-            buyer: event.purchaser,
+            item: purchase.item,
+            buyer: purchase.purchaser,
         };
 
-        db_query_purchased.create(purchased_item).unwrap();
+        db_query_purchased.create(purchased_item, purchase.request).unwrap();
 
-        response.send(PurchaseResponse{request: event.request});
+        response.send(PurchaseResponse{request: purchase.request});
     }
 }
 
@@ -134,13 +134,13 @@ fn print_items_table(items: DatabaseQuery<&ItemQuery>, print_table: EventReader<
         return;
     }
     let items = items
-        .load_components::<(&DatabaseEntity, &MarketItem)>(ItemQuery::load_all())
+        .load_components::<(&DatabaseEntity, &MarketItem)>(ItemQuery::load_all(-1))
         .unwrap();
 
     let mut items_table = prettytable::Table::new();
     items_table.add_row(row!["id", "seller_id", "name", "price"]);
     for (db_entity, item) in items {
-        items_table.add_row(row![db_entity.id, item.seller_id.id, item.name, item.price]);
+        items_table.add_row(row![db_entity.id, item.seller_id, item.name, item.price]);
     }
 
     println!("Items");
@@ -155,13 +155,13 @@ fn print_purchased_items_table(
         return;
     }
     let purchased_items: Vec<(&DatabaseEntity, &PurchasedItem)> = purchased_items
-        .load_components::<(&DatabaseEntity, &PurchasedItem)>(PurchaseItemQuery::load_all())
+        .load_components::<(&DatabaseEntity, &PurchasedItem)>(PurchaseItemQuery::load_all(-1))
         .unwrap();
 
     let mut purchased_items_table = prettytable::Table::new();
     purchased_items_table.add_row(row!["id", "item", "buyer"]);
     for (db_entity, item) in purchased_items {
-        purchased_items_table.add_row(row![db_entity.id, item.item.id, item.buyer.id]);
+        purchased_items_table.add_row(row![db_entity.id, item.item, item.buyer]);
     }
 
     println!("Purchased Items");
@@ -179,14 +179,14 @@ fn print_users_table(
     }
     let users = {
         let users = users
-            .load_components::<(Entity, &DatabaseEntity, &User)>(UserQuery::load_all())
+            .load_components::<(Entity, &DatabaseEntity, &User)>(UserQuery::load_all(-1))
             .unwrap();
 
         let buyers = buyers
-            .load_components::<(Entity, &Buyer)>(BuyerQuery::load_all())
+            .load_components::<(Entity, &Buyer)>(BuyerQuery::load_all(-1))
             .unwrap();
         let sellers = sellers
-            .load_components::<(Entity, &Seller)>(SellerQuery::load_all())
+            .load_components::<(Entity, &Seller)>(SellerQuery::load_all(-1))
             .unwrap();
 
         users
@@ -260,42 +260,26 @@ fn preload_events(
     // create two purchase events
 
     let purchase_event = Purchase {
-        purchaser: DatabaseEntity {
-            id: PURCHASER_ID,
-            persisted: true.into(),
-            dirty: false,
-        },
-        item: DatabaseEntity {
-            id: MARKET_ITEM_ID,
-            persisted: true.into(),
-            dirty: false,
-        },
+        purchaser: PURCHASER_ID,
+        item: MARKET_ITEM_ID,
         request: 0,
     };
 
     println!(
         "\tPreloading purchase event:\n\t\tbuyer {:?}, item {:?}",
-        purchase_event.purchaser.id, purchase_event.item.id
+        purchase_event.purchaser, purchase_event.item
     );
     purchase_events.send(purchase_event);
 
     let purchase_event = Purchase {
-        purchaser: DatabaseEntity {
-            id: PURCHASER_ID,
-            persisted: true.into(),
-            dirty: false,
-        },
-        item: DatabaseEntity {
-            id: MARKET_ITEM_ID,
-            persisted: true.into(),
-            dirty: false,
-        },
+        purchaser: PURCHASER_ID,
+        item: MARKET_ITEM_ID,
         request: 1,
     };
 
     println!(
         "\tPreloading purchase event:\n\t\tbuyer {:?}, item {:?}",
-        purchase_event.purchaser.id, purchase_event.item.id
+        purchase_event.purchaser, purchase_event.item
     );
     purchase_events.send(purchase_event);
 

@@ -16,7 +16,7 @@ pub struct Buyer {}
 
 #[derive(Component, Debug, Default, Clone)]
 pub struct MarketItem {
-    pub seller_id: DatabaseEntity,
+    pub seller_id: DatabaseEntityId,
     pub name: String,
     pub price: i32,
 }
@@ -24,11 +24,7 @@ pub struct MarketItem {
 impl FromRow<'_, sqlx::sqlite::SqliteRow> for MarketItem {
     fn from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Self, sqlx::Error> {
         Ok(MarketItem {
-            seller_id: DatabaseEntity {
-                id: row.try_get("seller_id")?,
-                persisted: true.into(),
-                dirty: false,
-            },
+            seller_id: row.try_get("seller_id")?,
             name: row.get("name"),
             price: row.get("price"),
         })
@@ -37,23 +33,15 @@ impl FromRow<'_, sqlx::sqlite::SqliteRow> for MarketItem {
 
 #[derive(Component, Debug, Default, Clone)]
 pub struct PurchasedItem {
-    pub item: DatabaseEntity,
-    pub buyer: DatabaseEntity,
+    pub item: DatabaseEntityId,
+    pub buyer: DatabaseEntityId,
 }
 
 impl FromRow<'_, sqlx::sqlite::SqliteRow> for PurchasedItem {
     fn from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Self, sqlx::Error> {
         Ok(PurchasedItem {
-            item: DatabaseEntity {
-                id: row.try_get("item")?,
-                persisted: true.into(),
-                dirty: false,
-            },
-            buyer: DatabaseEntity {
-                id: row.try_get("buyer")?,
-                persisted: true.into(),
-                dirty: false,
-            },
+            item: row.try_get("item")?,
+            buyer: row.try_get("buyer")?,
         })
     }
 }

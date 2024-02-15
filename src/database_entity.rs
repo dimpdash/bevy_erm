@@ -1,5 +1,8 @@
 use bevy_ecs::{component::Component, prelude::*};
 use bevy_mod_index::prelude::*;
+use bevy_utils::petgraph::visit::Data;
+
+use crate::{DatabaseEntityWithRequest, RequestId};
 
 pub struct DatabaseEntityIndex;
 impl IndexInfo for DatabaseEntityIndex {
@@ -44,9 +47,11 @@ impl From<Persisted> for bool {
     }
 }
 
+pub type DatabaseEntityId = i64;
+
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Component, Debug, Default, sqlx::FromRow)]
 pub struct DatabaseEntity {
-    pub id: i64,
+    pub id: DatabaseEntityId,
 
     // Whether the entity has been persisted to the database ever
     // When creating an entity it will only be in memory and not have
@@ -57,4 +62,17 @@ pub struct DatabaseEntity {
 
     #[sqlx(skip)]
     pub dirty: bool,
+
+    #[sqlx(skip)]
+    // The request the database entity belongs to
+    pub request: RequestId,
+}
+
+impl DatabaseEntityWithRequest for DatabaseEntity {
+    fn request(&self) -> &RequestId {
+        &self.request
+    }
+    fn id(&self) -> &DatabaseEntityId {
+        &self.id
+    }
 }

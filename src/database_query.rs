@@ -9,6 +9,7 @@ use bevy_mod_index::prelude::*;
 use bevy_utils::hashbrown::HashSet;
 use casey::lower;
 use futures::executor::block_on;
+use sqlx::Database;
 
 type QueryItem<'a, Q> = <Q as DBQueryInfo>::Item<'a>;
 type ROQueryItem<'a, Q> = <Q as DBQueryInfo>::ReadOnlyItem<'a>;
@@ -33,15 +34,15 @@ pub trait DBQueryInfo {
     type Database: DatabaseResource;
     type Mapper: ComponentMapper;
 
-    fn get<'w>(
+    fn get<'w, D: DatabaseEntityWithRequest>(
         db: &Self::Database,
         world: UnsafeWorldCell<'w>,
-        db_entity: &DatabaseEntity,
+        db_entity: &D,
     ) -> Result<Self::ReadOnlyItem<'w>, ()>;
-    fn get_mut<'w>(
+    fn get_mut<'w, D: DatabaseEntityWithRequest>(
         db: &Self::Database,
         world: UnsafeWorldCell<'w>,
-        db_entity: &DatabaseEntity,
+        db_entity: &D,
     ) -> Result<Self::Item<'w>, ()>;
     fn update_component<'w>(
         db: &Self::Database,
@@ -66,6 +67,7 @@ pub trait DBQueryInfo {
         db: &Self::Database,
         world: UnsafeWorldCell<'_>,
         component: Self::DerefItem,
+        request: RequestId
     ) -> Result<(), ()>;
 }
 
@@ -128,12 +130,17 @@ where
     }
 }
 
+pub trait DatabaseEntityWithRequest {
+    fn request(&self) -> &RequestId;
+    fn id(&self) -> &DatabaseEntityId;
+}
+
 impl<'w, 's, Q: DBQueryInfo> DatabaseQuery<'w, 's, Q> {
-    pub fn get(&self, db_entity: &DatabaseEntity) -> Result<Q::ReadOnlyItem<'_>, ()> {
+    pub fn get<D: DatabaseEntityWithRequest>(&self, db_entity: &D) -> Result<Q::ReadOnlyItem<'_>, ()> {
         Q::get(&self.db, self.world, db_entity)
     }
 
-    pub fn get_mut(&self, db_entity: &DatabaseEntity) -> Result<Q::Item<'_>, ()> {
+    pub fn get_mut<D: DatabaseEntityWithRequest>(&self, db_entity: &D) -> Result<Q::Item<'_>, ()> {
         Q::get_mut(&self.db, self.world, db_entity)
     }
 
@@ -162,8 +169,8 @@ impl<'w, 's, Q: DBQueryInfo> DatabaseQuery<'w, 's, Q> {
         Q::load_components::<R>(&self.db, self.world, get_comp_from_db)
     }
 
-    pub fn create(&self, component: Q::DerefItem) -> Result<(), ()> {
-        Q::create(&self.db, self.world, component)
+    pub fn create(&self, component: Q::DerefItem, request: RequestId) -> Result<(), ()> {
+        Q::create(&self.db, self.world, component, request)
     }
 
     pub fn update_or_insert_component(
@@ -187,13 +194,13 @@ impl<'w, 's, Q: DBQueryInfo> DatabaseQuery<'w, 's, Q> {
 pub trait ComponentMapper {
     type Component;
 
-    async fn get<'c, E>(e: E, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
+    async fn get<'c, E>(e: E, db_entity: &DatabaseEntityId) -> Result<Self::Component, ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>;
 
     async fn update_component<'c, E>(
         tr: E,
-        db_entity: &DatabaseEntity,
+        db_entity: &DatabaseEntityId,
         component: &Self::Component,
     ) -> Result<(), ()>
     where
@@ -201,7 +208,7 @@ pub trait ComponentMapper {
 
     async fn insert_component<'c, E>(
         tr: E,
-        db_entity: &DatabaseEntity,
+        db_entity: &DatabaseEntityId,
         component: &Self::Component,
     ) -> Result<(), ()>
     where
@@ -214,7 +221,7 @@ pub struct NullMapper;
 impl ComponentMapper for NullMapper {
     type Component = ();
 
-    async fn get<'c, E>(_e: E, _db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
+    async fn get<'c, E>(_e: E, _db_entity: &DatabaseEntityId) -> Result<Self::Component, ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
@@ -223,7 +230,7 @@ impl ComponentMapper for NullMapper {
 
     async fn update_component<'c, E>(
         _tr: E,
-        _db_entity: &DatabaseEntity,
+        _db_entity: &DatabaseEntityId,
         _component: &Self::Component,
     ) -> Result<(), ()>
     where
@@ -234,7 +241,7 @@ impl ComponentMapper for NullMapper {
 
     async fn insert_component<'c, E>(
         _tr: E,
-        _db_entity: &DatabaseEntity,
+        _db_entity: &DatabaseEntityId,
         _component: &Self::Component,
     ) -> Result<(), ()>
     where
@@ -259,18 +266,18 @@ where
     type Database = AnyDatabaseResource;
     type Mapper = NullMapper;
 
-    fn get<'w>(
+    fn get<'w, D: DatabaseEntityWithRequest>(
         db: &Self::Database,
         world: UnsafeWorldCell<'w>,
-        db_entity: &DatabaseEntity,
+        db_entity: &D,
     ) -> Result<Self::ReadOnlyItem<'w>, ()> {
         SingleComponentRetriever::<T, Self::Database>::get(db, world, db_entity)
     }
 
-    fn get_mut<'w>(
+    fn get_mut<'w, D: DatabaseEntityWithRequest>(
         db: &Self::Database,
         world: UnsafeWorldCell<'w>,
-        db_entity: &DatabaseEntity,
+        db_entity: &D,
     ) -> Result<Self::Item<'w>, ()> {
         SingleComponentRetriever::<T, Self::Database>::get(db, world, db_entity)
     }
@@ -315,8 +322,9 @@ where
         db: &Self::Database,
         world: UnsafeWorldCell<'_>,
         component: Self::DerefItem,
+        request: RequestId
     ) -> Result<(), ()> {
-        SingleComponentRetriever::<T, Self::Database>::create(db, world, component)
+        SingleComponentRetriever::<T, Self::Database>::create(db, world, component, request)
     }
 }
 
@@ -332,18 +340,18 @@ where
     type Database = AnyDatabaseResource;
     type Mapper = NullMapper;
 
-    fn get<'w>(
+    fn get<'w, D: DatabaseEntityWithRequest>(
         db: &Self::Database,
         world: UnsafeWorldCell<'w>,
-        db_entity: &DatabaseEntity,
+        db_entity: &D,
     ) -> Result<Self::ReadOnlyItem<'w>, ()> {
         SingleComponentRetriever::<T, Self::Database>::get(db, world, db_entity)
     }
 
-    fn get_mut<'w>(
+    fn get_mut<'w, D: DatabaseEntityWithRequest>(
         db: &Self::Database,
         world: UnsafeWorldCell<'w>,
-        db_entity: &DatabaseEntity,
+        db_entity: &D,
     ) -> Result<Self::Item<'w>, ()> {
         SingleComponentRetriever::<T, Self::Database>::get_mut(db, world, db_entity)
     }
@@ -388,8 +396,9 @@ where
         db: &Self::Database,
         world: UnsafeWorldCell<'_>,
         component: Self::DerefItem,
+        request: RequestId
     ) -> Result<(), ()> {
-        SingleComponentRetriever::<T, Self::Database>::create(db, world, component)
+        SingleComponentRetriever::<T, Self::Database>::create(db, world, component, request)
     }
 }
 
@@ -410,7 +419,7 @@ macro_rules! simple_composition_of_db_queries {
             type Database = <Z as DBQueryInfo>::Database;
             type Mapper = NullMapper;
 
-            fn get<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::ReadOnlyItem<'w>, ()> {
+            fn get<'w, D: DatabaseEntityWithRequest>(db: &Self::Database, world: UnsafeWorldCell<'w>, db_entity: &D) -> Result<Self::ReadOnlyItem<'w>, ()> {
             //returns a tuple of all the gets
                 Ok((
                     Z::get(db, world, db_entity)?,
@@ -421,7 +430,7 @@ macro_rules! simple_composition_of_db_queries {
                 )*))
             }
 
-            fn get_mut<'w>(db: &Self::Database, world: UnsafeWorldCell<'w>, db_entity: &DatabaseEntity) -> Result<Self::Item<'w>, ()> {
+            fn get_mut<'w, D: DatabaseEntityWithRequest>(db: &Self::Database, world: UnsafeWorldCell<'w>, db_entity: &D) -> Result<Self::Item<'w>, ()> {
                 //returns a tuple of all the gets
                 Ok((
                     Z::get_mut(db, world, db_entity)?,
@@ -461,11 +470,11 @@ macro_rules! simple_composition_of_db_queries {
                 unimplemented!()
             }
 
-            fn create(db: &Self::Database, world: UnsafeWorldCell<'_>, component: Self::DerefItem) -> Result<(), ()> {
+            fn create(db: &Self::Database, world: UnsafeWorldCell<'_>, component: Self::DerefItem, request: RequestId) -> Result<(), ()> {
                 let (z, $(lower!($name),)*) = component;
 
-                Z::create(db, world, z)?;
-                $($name::create(db, world, lower!($name))?;)*
+                Z::create(db, world, z, request)?;
+                $($name::create(db, world, lower!($name), request)?;)*
 
                 Ok(())
             }
@@ -499,10 +508,10 @@ impl<MyMapper: ComponentMapper> SingleComponentRetriever<MyMapper, AnyDatabaseRe
 where
     <MyMapper as ComponentMapper>::Component: Component,
 {
-    fn get_internal(
+    fn get_internal<D: DatabaseEntityWithRequest>(
         db: &AnyDatabaseResource,
         world: UnsafeWorldCell<'_>,
-        db_entity: &DatabaseEntity,
+        db_entity: &D,
         component_preloaded: Option<<MyMapper as ComponentMapper>::Component>,
     ) -> Entity {
         // let conn = self.db.get_transaction();
@@ -512,10 +521,10 @@ where
         let tr_option = &mut (*db_handle).write().unwrap().tr;
         let conn = tr_option.as_mut().unwrap();
 
-        let val = db_entity.id;
+        let db_entity_id = *db_entity.id();
 
         let mut reader = IntoSystem::into_system(
-            move |mut index: Index<DatabaseEntityIndex>| -> HashSet<Entity> { index.lookup(&val) },
+            move |mut index: Index<DatabaseEntityIndex>| -> HashSet<Entity> { index.lookup(&db_entity_id) },
         );
 
         let entity_set: HashSet<Entity> = unsafe {
@@ -537,7 +546,7 @@ where
                     None => {
                         let db_component = match component_preloaded {
                             Some(component) => component,
-                            None => block_on(MyMapper::get(&mut **conn, db_entity)).unwrap(),
+                            None => block_on(MyMapper::get(&mut **conn, &db_entity.id())).unwrap(),
                         };
                         // write the component to the entity
                         unsafe {
@@ -552,16 +561,17 @@ where
             None => {
                 let component = match component_preloaded {
                     Some(component) => component,
-                    None => block_on(MyMapper::get(&mut **conn, db_entity)).unwrap(),
+                    None => block_on(MyMapper::get(&mut **conn, &db_entity.id())).unwrap(),
                 };
                 unsafe {
                     let w = world.world_mut();
                     let entity = w
                         .spawn((
                             DatabaseEntity {
-                                id: db_entity.id,
+                                id: *db_entity.id(),
                                 persisted: true.into(),
                                 dirty: false,
+                                request: *db_entity.request(),
                             },
                             component,
                         ))
@@ -634,10 +644,10 @@ where
     type Database = AnyDatabaseResource;
     type Mapper = MyMapper;
 
-    fn get<'w>(
+    fn get<'w, D: DatabaseEntityWithRequest>(
         db: &Self::Database,
         world: UnsafeWorldCell<'w>,
-        db_entity: &DatabaseEntity,
+        db_entity: &D,
     ) -> Result<Self::ReadOnlyItem<'w>, ()> {
         let entity = Self::get_internal(db, world, db_entity, None);
 
@@ -649,10 +659,10 @@ where
         }
     }
 
-    fn get_mut<'w>(
+    fn get_mut<'w, D: DatabaseEntityWithRequest>(
         db: &Self::Database,
         world: UnsafeWorldCell<'w>,
-        db_entity: &DatabaseEntity,
+        db_entity: &D,
     ) -> Result<Self::Item<'w>, ()> {
         let entity = Self::get_internal(db, world, db_entity, None);
 
@@ -683,7 +693,7 @@ where
         let tr_option = &mut (*db_handle).write().unwrap().tr;
         let tr = tr_option.as_mut().unwrap();
 
-        block_on(MyMapper::update_component(&mut **tr, db_entity, component))
+        block_on(MyMapper::update_component(&mut **tr, db_entity.id(), component))
     }
 
     fn insert_component<'w>(
@@ -696,7 +706,7 @@ where
         let tr_option = &mut (*db_handle).write().unwrap().tr;
         let tr = tr_option.as_mut().unwrap();
 
-        block_on(MyMapper::insert_component(&mut **tr, db_entity, component))
+        block_on(MyMapper::insert_component(&mut **tr, db_entity.id(), component))
     }
 
     fn load_components<'w, R: ReturnSelector<'w>>(
@@ -716,6 +726,7 @@ where
         db: &Self::Database,
         world: UnsafeWorldCell<'_>,
         component: Self::DerefItem,
+        request: RequestId,
     ) -> Result<(), ()> {
         unsafe {
             let w = world.world_mut();
@@ -725,6 +736,7 @@ where
                     id: db.get_key(),
                     persisted: false.into(),
                     dirty: false,
+                    request: request
                 },
             ));
         }

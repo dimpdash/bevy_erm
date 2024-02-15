@@ -8,6 +8,7 @@ use sqlx::Row;
 pub struct BuyerQuery {}
 impl BuyerQuery {
     pub fn load_all(
+        request: RequestId
     ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, Buyer)>, ()> {
         move |conn: &mut sqlx::SqliteConnection| {
             let buyers =
@@ -24,6 +25,7 @@ impl BuyerQuery {
                             id,
                             persisted: true.into(),
                             dirty: false,
+                            request: request,
                         },
                         Buyer {},
                     )
@@ -39,12 +41,12 @@ impl BuyerQuery {
 impl ComponentMapper for BuyerQuery {
     type Component = Buyer;
 
-    async fn get<'c, E>(conn: E, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
+    async fn get<'c, E>(conn: E, db_entity: &DatabaseEntityId) -> Result<Self::Component, ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         let buyer_bool = sqlx::query("SELECT buyer FROM users WHERE id = ?")
-            .bind(db_entity.id)
+            .bind(db_entity)
             .fetch_one(conn)
             .await;
         match buyer_bool {
@@ -55,7 +57,7 @@ impl ComponentMapper for BuyerQuery {
 
     async fn update_component<'c, E>(
         _tr: E,
-        _db_entity: &DatabaseEntity,
+        _db_entity: &DatabaseEntityId,
         _component: &Self::Component,
     ) -> Result<(), ()>
     where
@@ -66,14 +68,14 @@ impl ComponentMapper for BuyerQuery {
 
     async fn insert_component<'c, E>(
         tr: E,
-        db_entity: &DatabaseEntity,
+        db_entity: &DatabaseEntityId,
         _component: &Self::Component,
     ) -> Result<(), ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         let r = sqlx::query("UPDATE users SET buyer = 1 WHERE id = ?")
-            .bind(db_entity.id)
+            .bind(db_entity)
             .execute(tr)
             .await;
 
@@ -83,13 +85,13 @@ impl ComponentMapper for BuyerQuery {
         }
     }
 
-    // async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntity) -> Result<(), ()>
+    // async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntityId) -> Result<(), ()>
     // where
     //     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     // {
     //     let r = block_on(
     //         sqlx::query("UPDATE users SET buyer = 0 WHERE id = ?")
-    //             .bind(db_entity.id)
+    //             .bind(db_entity)
     //             .execute(tr),
     //     );
     //     match r {
@@ -103,6 +105,7 @@ pub struct UserQuery {}
 
 impl UserQuery {
     pub fn load_all(
+        request: RequestId
     ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, User)>, ()> {
         move |conn: &mut sqlx::SqliteConnection| {
             let users =
@@ -119,6 +122,7 @@ impl UserQuery {
                             id,
                             persisted: true.into(),
                             dirty: false,
+                            request: request,
                         },
                         User { name },
                     )
@@ -134,12 +138,12 @@ impl UserQuery {
 impl ComponentMapper for UserQuery {
     type Component = User;
 
-    async fn get<'c, E>(conn: E, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
+    async fn get<'c, E>(conn: E, db_entity: &DatabaseEntityId) -> Result<Self::Component, ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         let user = sqlx::query_as::<_, User>("SELECT name FROM users WHERE id = ?")
-            .bind(db_entity.id)
+            .bind(db_entity)
             .fetch_one(conn)
             .await
             .unwrap();
@@ -148,7 +152,7 @@ impl ComponentMapper for UserQuery {
 
     async fn update_component<'c, E>(
         tr: E,
-        db_entity: &DatabaseEntity,
+        db_entity: &DatabaseEntityId,
         component: &Self::Component,
     ) -> Result<(), ()>
     where
@@ -156,7 +160,7 @@ impl ComponentMapper for UserQuery {
     {
         let r = sqlx::query("UPDATE users SET name = ? WHERE id = ?")
             .bind(component.name.clone())
-            .bind(db_entity.id)
+            .bind(db_entity)
             .execute(tr)
             .await;
         match r {
@@ -167,14 +171,14 @@ impl ComponentMapper for UserQuery {
 
     async fn insert_component<'c, E>(
         tr: E,
-        db_entity: &DatabaseEntity,
+        db_entity: &DatabaseEntityId,
         component: &Self::Component,
     ) -> Result<(), ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         let r = sqlx::query("INSERT INTO users (id, name) VALUES (?, ?)")
-            .bind(db_entity.id)
+            .bind(db_entity)
             .bind(component.name.clone())
             .execute(tr)
             .await;
@@ -185,12 +189,12 @@ impl ComponentMapper for UserQuery {
         }
     }
 
-    // async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntity) -> Result<(), ()>
+    // async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntityId) -> Result<(), ()>
     // where
     //     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     // {
     //     let r = sqlx::query("DELETE FROM users WHERE id = ?")
-    //         .bind(db_entity.id)
+    //         .bind(db_entity)
     //         .execute(tr)
     //         .await;
     //     match r {
@@ -204,6 +208,7 @@ pub struct SellerQuery {}
 
 impl SellerQuery {
     pub fn load_all(
+        request: RequestId
     ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, Seller)>, ()> {
         move |conn: &mut sqlx::SqliteConnection| {
             let sellers =
@@ -220,6 +225,7 @@ impl SellerQuery {
                             id,
                             persisted: true.into(),
                             dirty: false,
+                            request: request,
                         },
                         Seller {},
                     )
@@ -235,12 +241,12 @@ impl SellerQuery {
 impl ComponentMapper for SellerQuery {
     type Component = Seller;
 
-    async fn get<'c, E>(conn: E, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
+    async fn get<'c, E>(conn: E, db_entity: &DatabaseEntityId) -> Result<Self::Component, ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         let seller_bool = sqlx::query("SELECT seller FROM users WHERE id = ?")
-            .bind(db_entity.id)
+            .bind(db_entity)
             .fetch_one(conn)
             .await;
         match seller_bool {
@@ -251,7 +257,7 @@ impl ComponentMapper for SellerQuery {
 
     async fn update_component<'c, E>(
         _tr: E,
-        _db_entity: &DatabaseEntity,
+        _db_entity: &DatabaseEntityId,
         _component: &Self::Component,
     ) -> Result<(), ()>
     where
@@ -262,14 +268,14 @@ impl ComponentMapper for SellerQuery {
 
     async fn insert_component<'c, E>(
         tr: E,
-        db_entity: &DatabaseEntity,
+        db_entity: &DatabaseEntityId,
         _component: &Self::Component,
     ) -> Result<(), ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         let r = sqlx::query("UPDATE users SET seller = 1 WHERE id = ?")
-            .bind(db_entity.id)
+            .bind(db_entity)
             .execute(tr)
             .await;
 
@@ -279,13 +285,13 @@ impl ComponentMapper for SellerQuery {
         }
     }
 
-    // async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntity) -> Result<(), ()>
+    // async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntityId) -> Result<(), ()>
     // where
     //     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     // {
     //     let r = block_on(
     //         sqlx::query("UPDATE users SET seller = 0 WHERE id = ?")
-    //             .bind(db_entity.id)
+    //             .bind(db_entity)
     //             .execute(tr),
     //     );
     //     match r {
@@ -299,6 +305,7 @@ pub struct ItemQuery {}
 
 impl ItemQuery {
     pub fn load_all(
+        request: RequestId
     ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, MarketItem)>, ()>
     {
         move |conn: &mut sqlx::SqliteConnection| {
@@ -320,13 +327,10 @@ impl ItemQuery {
                             id,
                             persisted: true.into(),
                             dirty: false,
+                            request: request,
                         },
                         MarketItem {
-                            seller_id: DatabaseEntity {
-                                id: seller_id,
-                                persisted: true.into(),
-                                dirty: false,
-                            },
+                            seller_id,
                             name,
                             price,
                         },
@@ -363,13 +367,10 @@ impl ItemQuery {
                             id,
                             persisted: true.into(),
                             dirty: false,
+                            request: seller.request,
                         },
                         MarketItem {
-                            seller_id: DatabaseEntity {
-                                id: seller_id,
-                                persisted: true.into(),
-                                dirty: false,
-                            },
+                            seller_id,
                             name,
                             price,
                         },
@@ -386,12 +387,12 @@ impl ItemQuery {
 impl ComponentMapper for ItemQuery {
     type Component = MarketItem;
 
-    async fn get<'c, E>(conn: E, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
+    async fn get<'c, E>(conn: E, db_entity: &DatabaseEntityId) -> Result<Self::Component, ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         let item = sqlx::query_as::<_, MarketItem>("SELECT item FROM items WHERE id = ?")
-            .bind(db_entity.id as i32)
+            .bind(db_entity)
             .fetch_one(conn)
             .await
             .unwrap();
@@ -400,17 +401,17 @@ impl ComponentMapper for ItemQuery {
 
     async fn update_component<'c, E>(
         tr: E,
-        db_entity: &DatabaseEntity,
+        db_entity: &DatabaseEntityId,
         component: &Self::Component,
     ) -> Result<(), ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         let r = sqlx::query("UPDATE items SET seller_id = ?, name = ?, price = ? WHERE id = ?")
-            .bind(component.seller_id.id)
+            .bind(component.seller_id)
             .bind(component.name.clone())
             .bind(component.price)
-            .bind(db_entity.id)
+            .bind(db_entity)
             .execute(tr)
             .await;
         match r {
@@ -421,15 +422,15 @@ impl ComponentMapper for ItemQuery {
 
     async fn insert_component<'c, E>(
         tr: E,
-        db_entity: &DatabaseEntity,
+        db_entity: &DatabaseEntityId,
         component: &Self::Component,
     ) -> Result<(), ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         let r = sqlx::query("INSERT INTO items (id, seller_id, name, price) VALUES (?, ?, ?, ?)")
-            .bind(db_entity.id)
-            .bind(component.seller_id.id)
+            .bind(db_entity)
+            .bind(component.seller_id)
             .bind(component.name.clone())
             .bind(component.price)
             .execute(tr)
@@ -441,12 +442,12 @@ impl ComponentMapper for ItemQuery {
         }
     }
 
-    // async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntity) -> Result<(), ()>
+    // async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntityId) -> Result<(), ()>
     // where
     //     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     // {
     //     let r = sqlx::query("DELETE FROM items WHERE id = ?")
-    //         .bind(db_entity.id)
+    //         .bind(db_entity)
     //         .execute(tr)
     //         .await;
     //     match r {
@@ -460,6 +461,7 @@ pub struct PurchaseItemQuery {}
 
 impl PurchaseItemQuery {
     pub fn load_all(
+        request: RequestId
     ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, PurchasedItem)>, ()>
     {
         move |conn: &mut sqlx::SqliteConnection| {
@@ -480,18 +482,11 @@ impl PurchaseItemQuery {
                             id,
                             persisted: true.into(),
                             dirty: false,
+                            request: request,
                         },
                         PurchasedItem {
-                            item: DatabaseEntity {
-                                id: item,
-                                persisted: true.into(),
-                                dirty: false,
-                            },
-                            buyer: DatabaseEntity {
-                                id: buyer,
-                                persisted: true.into(),
-                                dirty: false,
-                            },
+                            item: item,
+                            buyer: buyer,
                         },
                     )
                 })
@@ -506,13 +501,13 @@ impl PurchaseItemQuery {
 impl ComponentMapper for PurchaseItemQuery {
     type Component = PurchasedItem;
 
-    async fn get<'c, E>(conn: E, db_entity: &DatabaseEntity) -> Result<Self::Component, ()>
+    async fn get<'c, E>(conn: E, db_entity: &DatabaseEntityId) -> Result<Self::Component, ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         let item =
             sqlx::query_as::<_, PurchasedItem>("SELECT item FROM purchased_items WHERE id = ?")
-                .bind(db_entity.id)
+                .bind(db_entity)
                 .fetch_one(conn)
                 .await
                 .unwrap();
@@ -521,16 +516,16 @@ impl ComponentMapper for PurchaseItemQuery {
 
     async fn update_component<'c, E>(
         tr: E,
-        db_entity: &DatabaseEntity,
+        db_entity: &DatabaseEntityId,
         component: &Self::Component,
     ) -> Result<(), ()>
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         let r = sqlx::query("UPDATE purchased_items SET item = ?, buyer = ? WHERE id = ?")
-            .bind(component.item.id)
-            .bind(component.buyer.id)
-            .bind(db_entity.id)
+            .bind(component.item)
+            .bind(component.buyer)
+            .bind(db_entity)
             .execute(tr)
             .await;
         match r {
@@ -541,7 +536,7 @@ impl ComponentMapper for PurchaseItemQuery {
 
     async fn insert_component<'c, E>(
         tr: E,
-        db_entity: &DatabaseEntity,
+        db_entity: &DatabaseEntityId,
         component: &Self::Component,
     ) -> Result<(), ()>
     where
@@ -549,12 +544,12 @@ impl ComponentMapper for PurchaseItemQuery {
     {
         println!(
             "INSERT INTO purchased_items (id, item, buyer) VALUES ({:?}, {:?}, {:?})",
-            db_entity.id, component.item.id, component.buyer.id
+            db_entity, component.item, component.buyer
         );
         let r = sqlx::query("INSERT INTO purchased_items (id, item, buyer) VALUES (?, ?, ?)")
-            .bind(db_entity.id)
-            .bind(component.item.id)
-            .bind(component.buyer.id)
+            .bind(db_entity)
+            .bind(component.item)
+            .bind(component.buyer)
             .execute(tr)
             .await;
 
@@ -564,12 +559,12 @@ impl ComponentMapper for PurchaseItemQuery {
         }
     }
 
-    // async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntity) -> Result<(), ()>
+    // async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntityId) -> Result<(), ()>
     // where
     //     E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     // {
     //     let r = sqlx::query("DELETE FROM purchased_items WHERE id = ?")
-    //         .bind(db_entity.id)
+    //         .bind(db_entity)
     //         .execute(tr)
     //         .await;
     //     match r {
