@@ -27,3 +27,13 @@ impl DatabaseEntityWithRequest for (DatabaseEntityId, RequestId) {
         &self.0
     }
 }
+
+impl DatabaseEntityWithRequest for (RequestId, DatabaseEntityId) {
+    fn request(&self) -> &RequestId {
+        &self.0
+    }
+
+    fn id(&self) -> &DatabaseEntityId {
+        &self.1
+    }
+}
