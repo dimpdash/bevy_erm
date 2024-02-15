@@ -72,11 +72,11 @@ impl ComponentMapper for BuyerQuery {
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
-        let r = block_on(
+        let r = 
             sqlx::query("UPDATE users SET buyer = 1 WHERE id = ?")
                 .bind(db_entity.id)
-                .execute(tr),
-        );
+                .execute(tr)
+                .await;
 
         match r {
             Ok(_) => Ok(()),
@@ -139,11 +139,11 @@ impl ComponentMapper for UserQuery {
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
-        let user = block_on(
+        let user = 
             sqlx::query_as::<_, User>("SELECT name FROM users WHERE id = ?")
                 .bind(db_entity.id)
-                .fetch_one(conn),
-        )
+                .fetch_one(conn)
+                .await
         .unwrap();
         Ok(user)
     }
@@ -241,11 +241,11 @@ impl ComponentMapper for SellerQuery {
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
-        let seller_bool = block_on(
+        let seller_bool = 
             sqlx::query("SELECT seller FROM users WHERE id = ?")
                 .bind(db_entity.id)
-                .fetch_one(conn),
-        );
+                .fetch_one(conn)
+                .await;
         match seller_bool {
             Ok(_) => Ok(Seller {}),
             Err(_) => Err(()),
@@ -271,11 +271,11 @@ impl ComponentMapper for SellerQuery {
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
-        let r = block_on(
+        let r = 
             sqlx::query("UPDATE users SET seller = 1 WHERE id = ?")
                 .bind(db_entity.id)
-                .execute(tr),
-        );
+                .execute(tr)
+                .await;
 
         match r {
             Ok(_) => Ok(()),
@@ -394,12 +394,11 @@ impl ComponentMapper for ItemQuery {
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
-        let item = block_on(
-            sqlx::query_as::<_, MarketItem>("SELECT item FROM items WHERE id = ?")
+        let item = sqlx::query_as::<_, MarketItem>("SELECT item FROM items WHERE id = ?")
                 .bind(db_entity.id as i32)
-                .fetch_one(conn),
-        )
-        .unwrap();
+                .fetch_one(conn)
+                .await
+                .unwrap();
         Ok(item)
     }
 
@@ -515,12 +514,12 @@ impl ComponentMapper for PurchaseItemQuery {
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
-        let item = block_on(
+        let item =
             sqlx::query_as::<_, PurchasedItem>("SELECT item FROM purchased_items WHERE id = ?")
                 .bind(db_entity.id)
-                .fetch_one(conn),
-        )
-        .unwrap();
+                .fetch_one(conn)
+                .await
+                .unwrap();
         Ok(item)
     }
 
@@ -552,6 +551,7 @@ impl ComponentMapper for PurchaseItemQuery {
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
+        println!("INSERT INTO purchased_items (id, item, buyer) VALUES ({:?}, {:?}, {:?})", db_entity.id, component.item.id, component.buyer.id);
         let r = sqlx::query("INSERT INTO purchased_items (id, item, buyer) VALUES (?, ?, ?)")
             .bind(db_entity.id)
             .bind(component.item.id)
@@ -559,10 +559,12 @@ impl ComponentMapper for PurchaseItemQuery {
             .execute(tr)
             .await;
 
-        match r {
+        let val = match r {
             Ok(_) => Ok(()),
             Err(_) => Err(()),
-        }
+        };
+
+        val
     }
 
     // async fn delete_component<'c, E>(tr: E, db_entity: &DatabaseEntity) -> Result<(), ()>

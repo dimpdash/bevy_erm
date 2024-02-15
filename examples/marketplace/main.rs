@@ -31,13 +31,20 @@ pub struct GetSellerItems {
     pub seller: DatabaseEntity,
 }
 
+#[derive(Event)]
+pub struct PurchaseResponse;
+
 fn purchase_system(
     mut events: EventReader<Purchase>,
     db_query_purchased: DatabaseQuery<&PurchaseItemQuery>,
     item_query: DatabaseQuery<&ItemQuery>,
     purchaser_query: DatabaseQuery<&UserQuery>,
     seller_query: DatabaseQuery<&UserQuery>,
+    mut response: EventWriter<PurchaseResponse>,
 ) {
+    if events.is_empty() {
+        return;
+    }
     println!("Processing purchase events");
     for event in events.read() {
         let item = item_query.get(&event.item).unwrap();
@@ -53,7 +60,13 @@ fn purchase_system(
         };
 
         db_query_purchased.create(purchased_item).unwrap();
+
+        response.send(PurchaseResponse);
     }
+}
+
+fn print_tables(mut print_table: EventWriter<PrintTable>) {
+    print_table.send(PrintTable);
 }
 
 fn create_tables(db: Res<AnyDatabaseResource>) {
@@ -61,6 +74,8 @@ fn create_tables(db: Res<AnyDatabaseResource>) {
     let conn = &(*db_handle).write().unwrap().pool;
 
     block_on(async {
+        println!("Creating tables");
+
         // create the tables
         // market items table
         sqlx::query("CREATE TABLE items (id INTEGER PRIMARY KEY, seller_id INTEGER, name TEXT, price INTEGER)")
@@ -108,7 +123,13 @@ fn create_tables(db: Res<AnyDatabaseResource>) {
     });
 }
 
-fn print_items_table(items: DatabaseQuery<&ItemQuery>) {
+#[derive(Event)]
+pub struct PrintTable;
+
+fn print_items_table(items: DatabaseQuery<&ItemQuery>, print_table: EventReader<PrintTable>) {
+    if print_table.is_empty() {
+        return;
+    }
     let items = items
         .load_components::<(&DatabaseEntity, &MarketItem)>(ItemQuery::load_all())
         .unwrap();
@@ -123,7 +144,13 @@ fn print_items_table(items: DatabaseQuery<&ItemQuery>) {
     items_table.printstd();
 }
 
-fn print_purchased_items_table(purchased_items: DatabaseQuery<&PurchaseItemQuery>) {
+fn print_purchased_items_table(
+    purchased_items: DatabaseQuery<&PurchaseItemQuery>,
+    print_table: EventReader<PrintTable>,
+) {
+    if print_table.is_empty() {
+        return;
+    }
     let purchased_items: Vec<(&DatabaseEntity, &PurchasedItem)> = purchased_items
         .load_components::<(&DatabaseEntity, &PurchasedItem)>(PurchaseItemQuery::load_all())
         .unwrap();
@@ -142,7 +169,11 @@ fn print_users_table(
     users: DatabaseQuery<&UserQuery>,
     buyers: DatabaseQuery<&BuyerQuery>,
     sellers: DatabaseQuery<&SellerQuery>,
+    print_table: EventReader<PrintTable>,
 ) {
+    if print_table.is_empty() {
+        return;
+    }
     let users = {
         let users = users
             .load_components::<(Entity, &DatabaseEntity, &User)>(UserQuery::load_all())
@@ -189,6 +220,15 @@ const PURCHASER_ID: i64 = 1;
 const SELLER_ID: i64 = 2;
 const MARKET_ITEM_ID: i64 = 3;
 
+fn flush_purchase(mut purchase_events: EventReader<PurchaseResponse>, mut flush: EventWriter<FlushEvent>) {
+    if !purchase_events.is_empty() {
+        println!("Flushing purchase events");
+        flush.send(FlushEvent());
+        purchase_events.clear();
+    }
+
+}
+
 pub struct MarketplacePlugin;
 
 impl Plugin for MarketplacePlugin {
@@ -196,12 +236,37 @@ impl Plugin for MarketplacePlugin {
         app.add_event::<Purchase>()
             .add_event::<Sell>()
             .add_event::<GetSellerItems>()
+            .add_event::<PurchaseResponse>()
             .init_resource::<AnyDatabaseResource>()
+            .add_event::<FlushEvent>()
+            .add_event::<PrintTable>()
+
+            .add_systems(PreStartup, preload_events)
             .add_systems(Startup, create_tables)
-            .add_systems(PostStartup, print_items_table)
-            .add_systems(PostStartup, print_users_table)
-            .add_systems(PostStartup, print_purchased_items_table)
-            .add_systems(Update, purchase_system);
+            
+            .add_systems(Startup, print_tables.after(create_tables))
+            
+            .add_systems(Startup, print_items_table.after(print_tables))
+            .add_systems(Startup, print_users_table.after(print_tables))
+            .add_systems(Startup, print_purchased_items_table.after(print_tables))
+
+            .add_systems(Update, purchase_system)
+
+            .add_systems(Update, flush_purchase)
+
+            .add_systems(
+                Update,
+                flush_component_to_db::<PurchaseItemQuery>.before(commit_transaction),
+            )
+            .add_systems(
+                Update,
+                flush_component_to_db::<ItemQuery>.before(commit_transaction),
+            )
+            .add_systems(Update, commit_transaction)
+            .add_systems(Update, start_new_transaction.after(commit_transaction))
+            .add_systems(PostUpdate, print_items_table)
+            .add_systems(PostUpdate, print_users_table)
+            .add_systems(PostUpdate, print_purchased_items_table);
     }
 }
 
@@ -230,24 +295,28 @@ fn preload_events(
     );
     purchase_events.send(purchase_event);
 
-    let get_seller_items_event = GetSellerItems {
-        seller: DatabaseEntity {
-            id: SELLER_ID,
-            persisted: true.into(),
-            dirty: false,
-        },
-    };
+    // let get_seller_items_event = GetSellerItems {
+    //     seller: DatabaseEntity {
+    //         id: SELLER_ID,
+    //         persisted: true.into(),
+    //         dirty: false,
+    //     },
+    // };
 
-    println!(
-        "\tPreloading get seller items event:\n\t\tseller {:?}",
-        get_seller_items_event.seller.id
-    );
-    get_seller_items.send(get_seller_items_event);
+    // println!(
+    //     "\tPreloading get seller items event:\n\t\tseller {:?}",
+    //     get_seller_items_event.seller.id
+    // );
+    // get_seller_items.send(get_seller_items_event);
 
     println!("");
 }
 
-fn commit_transaction(db: Res<AnyDatabaseResource>) {
+fn commit_transaction(db: Res<AnyDatabaseResource>, flush_event: EventReader<FlushEvent>) {
+    if flush_event.is_empty() {
+        return;
+    }
+
     block_on(async {
         let db_handle = db.get_connection();
         let tr_option = &mut (*db_handle).write().unwrap().tr;
@@ -256,7 +325,11 @@ fn commit_transaction(db: Res<AnyDatabaseResource>) {
     });
 }
 
-fn start_new_transaction(db: Res<AnyDatabaseResource>) {
+fn start_new_transaction(db: Res<AnyDatabaseResource>, flush_event: EventReader<FlushEvent>) {
+    if flush_event.is_empty() {
+        return;
+    }
+
     block_on(async {
         let db_handle = db.get_connection();
         let new_transaction = {
@@ -268,58 +341,9 @@ fn start_new_transaction(db: Res<AnyDatabaseResource>) {
     });
 }
 
-fn runner(mut app: App) {
-    let mut preload_events = IntoSystem::into_system(preload_events);
-    preload_events.initialize(&mut app.world);
-    preload_events.run((), &mut app.world);
-
-    let mut is_sell_events = IntoSystem::into_system(events_available::<Sell>);
-    let mut is_purchase_events = IntoSystem::into_system(events_available::<Purchase>);
-    let mut is_get_seller_items_events =
-        IntoSystem::into_system(events_available::<GetSellerItems>);
-
-    is_sell_events.initialize(&mut app.world);
-    is_purchase_events.initialize(&mut app.world);
-    is_get_seller_items_events.initialize(&mut app.world);
-
-    let mut still_events_to_read = |world: &mut World| -> bool {
-        is_sell_events.run((), world)
-            || is_purchase_events.run((), world)
-            || is_get_seller_items_events.run((), world)
-    };
-
-    while still_events_to_read(&mut app.world) {
-        println!("===========================");
-        app.update();
-    }
-    println!("===========================");
-
-    let mut flush_to_db_schedule = Schedule::default();
-    flush_to_db_schedule.add_systems(flush_component_to_db::<ItemQuery>);
-    flush_to_db_schedule.add_systems(flush_component_to_db::<PurchaseItemQuery>);
-    flush_to_db_schedule.run(&mut app.world);
-
-    let mut commit_schedule = Schedule::default();
-    commit_schedule.add_systems(commit_transaction);
-    commit_schedule.run(&mut app.world);
-
-    println!("All Events Processed");
-
-    let mut new_transation_schedule = Schedule::default();
-    new_transation_schedule.add_systems(start_new_transaction);
-    new_transation_schedule.run(&mut app.world);
-
-    let mut end_schedule = Schedule::default();
-    end_schedule.add_systems(print_purchased_items_table);
-    // end_schedule.add_systems(print_items_table);
-    // end_schedule.add_systems(print_users_table);
-    end_schedule.run(&mut app.world);
-}
-
 #[tokio::main]
 async fn main() {
     App::new()
-        .set_runner(runner)
         .add_plugins(MarketplacePlugin)
         .run();
 }
