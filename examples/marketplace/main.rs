@@ -18,8 +18,6 @@ pub struct Purchase {
     pub request: RequestId,
 }
 
-
-
 /**
  * Creates a new item to sell
  */
@@ -35,7 +33,7 @@ pub struct GetSellerItems {
 }
 
 #[derive(Event)]
-pub struct PurchaseResponse{
+pub struct PurchaseResponse {
     request: RequestId,
 }
 
@@ -53,8 +51,16 @@ fn purchase_system(
     println!("Processing purchase events");
     for purchase in purchases.read() {
         let item = item_query.get(&(purchase.item, purchase.request)).unwrap();
-        let seller_name = seller_query.get(&(item.seller_id, purchase.request)).unwrap().name.clone();
-        let buyer_name = purchaser_query.get(&(purchase.purchaser, purchase.request)).unwrap().name.clone();
+        let seller_name = seller_query
+            .get(&(item.seller_id, purchase.request))
+            .unwrap()
+            .name
+            .clone();
+        let buyer_name = purchaser_query
+            .get(&(purchase.purchaser, purchase.request))
+            .unwrap()
+            .name
+            .clone();
         println!(
             "\t{:} purchases {:} from {:}",
             buyer_name, item.name, seller_name
@@ -64,22 +70,25 @@ fn purchase_system(
             buyer: purchase.purchaser,
         };
 
-        db_query_purchased.create(purchased_item, purchase.request).unwrap();
+        db_query_purchased
+            .create(purchased_item, purchase.request)
+            .unwrap();
 
         println!("Sending purchase response");
-        response.send(PurchaseResponse{request: purchase.request});
+        response.send(PurchaseResponse {
+            request: purchase.request,
+        });
     }
 }
 
+#[allow(dead_code)]
 fn print_tables(mut print_tables: EventWriter<PrintTable>, db: Res<AnyDatabaseResource>) {
     println!("PRINTING TABLES");
     let request = db.start_new_transaction();
-    print_tables.send(PrintTable{request});
+    print_tables.send(PrintTable { request });
 }
 
 fn create_tables(db: Res<AnyDatabaseResource>, mut print_tables: EventWriter<PrintTable>) {
-
-
     let request = db.start_new_transaction();
     block_on(async {
         // let db_handle = db.get_connection();
@@ -138,12 +147,10 @@ fn create_tables(db: Res<AnyDatabaseResource>, mut print_tables: EventWriter<Pri
     });
     db.commit_transaction(request);
 
-
-
     println!("Tables created");
 
     let request = db.start_new_transaction();
-    print_tables.send(PrintTable{request: request});
+    print_tables.send(PrintTable { request });
 }
 
 #[derive(Event)]
@@ -151,10 +158,16 @@ pub struct PrintTable {
     request: RequestId,
 }
 
-fn print_items_table(items: DatabaseQuery<&ItemQuery>, mut print_table_events: EventReader<PrintTable>) {
+fn print_items_table(
+    items: DatabaseQuery<&ItemQuery>,
+    mut print_table_events: EventReader<PrintTable>,
+) {
     for print_table in print_table_events.read() {
         let items = items
-            .load_components::<(&DatabaseEntity, &MarketItem)>(print_table.request, ItemQuery::load_all(print_table.request))
+            .load_components::<(&DatabaseEntity, &MarketItem)>(
+                print_table.request,
+                ItemQuery::load_all(print_table.request),
+            )
             .unwrap();
 
         let mut items_table = prettytable::Table::new();
@@ -175,7 +188,10 @@ fn print_purchased_items_table(
     for print_table in print_table_events.read() {
         println!("Printing purchased items");
         let purchased_items: Vec<(&DatabaseEntity, &PurchasedItem)> = purchased_items
-            .load_components::<(&DatabaseEntity, &PurchasedItem)>(print_table.request, PurchaseItemQuery::load_all(print_table.request))
+            .load_components::<(&DatabaseEntity, &PurchasedItem)>(
+                print_table.request,
+                PurchaseItemQuery::load_all(print_table.request),
+            )
             .unwrap();
 
         let mut purchased_items_table = prettytable::Table::new();
@@ -186,8 +202,7 @@ fn print_purchased_items_table(
 
         println!("Purchased Items");
         purchased_items_table.printstd();
-    }   
-
+    }
 }
 
 fn print_users_table(
@@ -199,14 +214,23 @@ fn print_users_table(
     for print_table in print_table_events.read() {
         let users = {
             let users = users
-                .load_components::<(Entity, &DatabaseEntity, &User)>(print_table.request, UserQuery::load_all(print_table.request))
+                .load_components::<(Entity, &DatabaseEntity, &User)>(
+                    print_table.request,
+                    UserQuery::load_all(print_table.request),
+                )
                 .unwrap();
 
             let buyers = buyers
-                .load_components::<(Entity, &Buyer)>(print_table.request, BuyerQuery::load_all(print_table.request))
+                .load_components::<(Entity, &Buyer)>(
+                    print_table.request,
+                    BuyerQuery::load_all(print_table.request),
+                )
                 .unwrap();
             let sellers = sellers
-                .load_components::<(Entity, &Seller)>(print_table.request, SellerQuery::load_all(print_table.request))
+                .load_components::<(Entity, &Seller)>(
+                    print_table.request,
+                    SellerQuery::load_all(print_table.request),
+                )
                 .unwrap();
 
             users
@@ -245,7 +269,9 @@ fn flush_purchase(
     println!("Flushing purchase events before loop");
     for purchase_event in purchase_events.read() {
         println!("Flushing purchase events");
-        flush.send(FlushEvent{request: purchase_event.request});
+        flush.send(FlushEvent {
+            request: purchase_event.request,
+        });
     }
 }
 
@@ -266,8 +292,6 @@ impl Plugin for MarketplacePlugin {
             .add_systems(PostUpdate, print_items_table)
             .add_systems(PostUpdate, print_users_table)
             .add_systems(PostUpdate, print_purchased_items_table);
-
-            ;
     }
 }
 
@@ -277,7 +301,6 @@ fn preload_events(
     db: Res<AnyDatabaseResource>,
 ) {
     println!("Preloading events:");
-
 
     // create two purchase events
 
@@ -308,11 +331,16 @@ fn preload_events(
     println!();
 }
 
-fn should_exit(purchase_response_events: EventReader<PurchaseResponse>, mut exit: EventWriter<AppExit>, mut print_tables: EventWriter<PrintTable>, db: Res<AnyDatabaseResource>) {
+fn should_exit(
+    purchase_response_events: EventReader<PurchaseResponse>,
+    mut exit: EventWriter<AppExit>,
+    mut print_tables: EventWriter<PrintTable>,
+    db: Res<AnyDatabaseResource>,
+) {
     if purchase_response_events.len() == 2 {
         exit.send(AppExit);
         let request = db.start_new_transaction();
-        print_tables.send(PrintTable{request});
+        print_tables.send(PrintTable { request });
     }
 }
 
@@ -320,7 +348,12 @@ fn runner(mut app: App) {
     loop {
         app.update();
 
-        if !app.world.get_resource::<Events<AppExit>>().unwrap().is_empty() {
+        if !app
+            .world
+            .get_resource::<Events<AppExit>>()
+            .unwrap()
+            .is_empty()
+        {
             break;
         }
     }
@@ -332,8 +365,7 @@ async fn main() {
     erm_plugin
         .add_flush_system(flush_component_to_db::<ItemQuery>)
         .add_flush_system(flush_component_to_db::<UserQuery>)
-        .add_flush_system(flush_component_to_db::<PurchaseItemQuery>)
-    ;
+        .add_flush_system(flush_component_to_db::<PurchaseItemQuery>);
 
     App::new()
         .set_runner(runner)

@@ -8,7 +8,7 @@ use sqlx::Row;
 pub struct BuyerQuery {}
 impl BuyerQuery {
     pub fn load_all(
-        request: RequestId
+        request: RequestId,
     ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, Buyer)>, ()> {
         move |conn: &mut sqlx::SqliteConnection| {
             let buyers =
@@ -25,7 +25,7 @@ impl BuyerQuery {
                             id,
                             persisted: true.into(),
                             dirty: false,
-                            request: request,
+                            request,
                         },
                         Buyer {},
                     )
@@ -105,7 +105,7 @@ pub struct UserQuery {}
 
 impl UserQuery {
     pub fn load_all(
-        request: RequestId
+        request: RequestId,
     ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, User)>, ()> {
         move |conn: &mut sqlx::SqliteConnection| {
             let users =
@@ -122,7 +122,7 @@ impl UserQuery {
                             id,
                             persisted: true.into(),
                             dirty: false,
-                            request: request,
+                            request,
                         },
                         User { name },
                     )
@@ -208,7 +208,7 @@ pub struct SellerQuery {}
 
 impl SellerQuery {
     pub fn load_all(
-        request: RequestId
+        request: RequestId,
     ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, Seller)>, ()> {
         move |conn: &mut sqlx::SqliteConnection| {
             let sellers =
@@ -225,7 +225,7 @@ impl SellerQuery {
                             id,
                             persisted: true.into(),
                             dirty: false,
-                            request: request,
+                            request,
                         },
                         Seller {},
                     )
@@ -305,7 +305,7 @@ pub struct ItemQuery {}
 
 impl ItemQuery {
     pub fn load_all(
-        request: RequestId
+        request: RequestId,
     ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, MarketItem)>, ()>
     {
         move |conn: &mut sqlx::SqliteConnection| {
@@ -327,7 +327,7 @@ impl ItemQuery {
                             id,
                             persisted: true.into(),
                             dirty: false,
-                            request: request,
+                            request,
                         },
                         MarketItem {
                             seller_id,
@@ -342,6 +342,7 @@ impl ItemQuery {
         }
     }
 
+    #[allow(dead_code)]
     pub fn load_items_of_seller(
         seller: DatabaseEntity,
     ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, MarketItem)>, ()>
@@ -461,7 +462,7 @@ pub struct PurchaseItemQuery {}
 
 impl PurchaseItemQuery {
     pub fn load_all(
-        request: RequestId
+        request: RequestId,
     ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, PurchasedItem)>, ()>
     {
         move |conn: &mut sqlx::SqliteConnection| {
@@ -482,12 +483,9 @@ impl PurchaseItemQuery {
                             id,
                             persisted: true.into(),
                             dirty: false,
-                            request: request,
+                            request,
                         },
-                        PurchasedItem {
-                            item: item,
-                            buyer: buyer,
-                        },
+                        PurchasedItem { item, buyer },
                     )
                 })
                 .collect();

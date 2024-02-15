@@ -1,5 +1,3 @@
-use std::borrow::BorrowMut;
-
 use crate::*;
 use async_trait::async_trait;
 use bevy_ecs::query::WorldQuery;
@@ -11,7 +9,6 @@ use bevy_mod_index::prelude::*;
 use bevy_utils::hashbrown::HashSet;
 use casey::lower;
 use futures::executor::block_on;
-use sqlx::Database;
 
 type QueryItem<'a, Q> = <Q as DBQueryInfo>::Item<'a>;
 type ROQueryItem<'a, Q> = <Q as DBQueryInfo>::ReadOnlyItem<'a>;
@@ -70,7 +67,7 @@ pub trait DBQueryInfo {
         db: &Self::Database,
         world: UnsafeWorldCell<'_>,
         component: Self::DerefItem,
-        request: RequestId
+        request: RequestId,
     ) -> Result<(), ()>;
 }
 
@@ -139,7 +136,10 @@ pub trait DatabaseEntityWithRequest {
 }
 
 impl<'w, 's, Q: DBQueryInfo> DatabaseQuery<'w, 's, Q> {
-    pub fn get<D: DatabaseEntityWithRequest>(&self, db_entity: &D) -> Result<Q::ReadOnlyItem<'_>, ()> {
+    pub fn get<D: DatabaseEntityWithRequest>(
+        &self,
+        db_entity: &D,
+    ) -> Result<Q::ReadOnlyItem<'_>, ()> {
         Q::get(&self.db, self.world, db_entity)
     }
 
@@ -230,7 +230,7 @@ impl IndexInfo for NullComponent {
     type Value = RequestId;
     type Storage = NoStorage<Self>;
 
-    fn value(c: &Self::Component) -> Self::Value {
+    fn value(_c: &Self::Component) -> Self::Value {
         RequestId(generational_arena::Index::from_raw_parts(0, 0))
     }
 }
@@ -343,7 +343,7 @@ where
         db: &Self::Database,
         world: UnsafeWorldCell<'_>,
         component: Self::DerefItem,
-        request: RequestId
+        request: RequestId,
     ) -> Result<(), ()> {
         SingleComponentRetriever::<T, Self::Database>::create(db, world, component, request)
     }
@@ -419,7 +419,7 @@ where
         db: &Self::Database,
         world: UnsafeWorldCell<'_>,
         component: Self::DerefItem,
-        request: RequestId
+        request: RequestId,
     ) -> Result<(), ()> {
         SingleComponentRetriever::<T, Self::Database>::create(db, world, component, request)
     }
@@ -543,7 +543,9 @@ where
         let db_entity_id = *db_entity.id();
 
         let mut reader = IntoSystem::into_system(
-            move |mut index: Index<DatabaseEntityIndex>| -> HashSet<Entity> { index.lookup(&db_entity_id) },
+            move |mut index: Index<DatabaseEntityIndex>| -> HashSet<Entity> {
+                index.lookup(&db_entity_id)
+            },
         );
 
         let entity_set: HashSet<Entity> = unsafe {
@@ -565,7 +567,7 @@ where
                     None => {
                         let db_component = match component_preloaded {
                             Some(component) => component,
-                            None => block_on(MyMapper::get(&mut **tr, &db_entity.id())).unwrap(),
+                            None => block_on(MyMapper::get(&mut **tr, db_entity.id())).unwrap(),
                         };
                         // write the component to the entity
                         unsafe {
@@ -580,7 +582,7 @@ where
             None => {
                 let component = match component_preloaded {
                     Some(component) => component,
-                    None => block_on(MyMapper::get(&mut **tr, &db_entity.id())).unwrap(),
+                    None => block_on(MyMapper::get(&mut **tr, db_entity.id())).unwrap(),
                 };
                 unsafe {
                     let w = world.world_mut();
@@ -612,7 +614,6 @@ where
             (),
         >,
     ) -> Result<Vec<Entity>, ()> {
-
         let components = {
             get_transaction!(tr, request, db);
             get_comp_from_db(&mut *tr)?
@@ -705,7 +706,11 @@ where
     ) -> Result<(), ()> {
         get_transaction!(tr, db_entity.request, db);
 
-        block_on(MyMapper::update_component(&mut **tr, db_entity.id(), component))
+        block_on(MyMapper::update_component(
+            &mut **tr,
+            db_entity.id(),
+            component,
+        ))
     }
 
     fn insert_component<'w>(
@@ -716,7 +721,11 @@ where
     ) -> Result<(), ()> {
         get_transaction!(tr, db_entity.request, db);
 
-        block_on(MyMapper::insert_component(&mut **tr, db_entity.id(), component))
+        block_on(MyMapper::insert_component(
+            &mut **tr,
+            db_entity.id(),
+            component,
+        ))
     }
 
     fn load_components<'w, R: ReturnSelector<'w>>(
@@ -747,7 +756,7 @@ where
                     id: db.get_key(),
                     persisted: false.into(),
                     dirty: false,
-                    request: request
+                    request,
                 },
             ));
         }

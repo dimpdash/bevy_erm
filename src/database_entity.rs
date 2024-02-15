@@ -1,8 +1,7 @@
 use std::fmt::Display;
 
-use bevy_ecs::{component::Component, prelude::*};
+use bevy_ecs::component::Component;
 use bevy_mod_index::prelude::*;
-use bevy_utils::petgraph::visit::Data;
 
 use crate::{DatabaseEntityWithRequest, RequestId};
 
@@ -29,7 +28,7 @@ impl From<Persisted> for bool {
     }
 }
 
-#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Debug, Default, Hash, sqlx::Type)]    
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Debug, Default, Hash, sqlx::Type)]
 #[sqlx(transparent)]
 pub struct DatabaseEntityId(pub i64);
 
@@ -76,5 +75,3 @@ impl IndexInfo for DatabaseEntityIndex {
         c.id
     }
 }
-
-

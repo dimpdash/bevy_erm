@@ -1,4 +1,7 @@
-use std::{any::type_name, borrow::BorrowMut, sync::{Arc, RwLock}};
+use std::{
+    any::type_name,
+    sync::{Arc, RwLock},
+};
 
 use bevy_ecs::prelude::*;
 use bevy_mod_index::index::Index;
@@ -78,13 +81,15 @@ impl DatabaseResource for AnyDatabaseResource {
     // It is progressing into the negatives so that instantiating any objects with positive keys will not conflict
     fn get_key(&self) -> DatabaseEntityId {
         let mut min_key = self.db.min_key.write().unwrap();
-        *min_key -= 1; 
+        *min_key -= 1;
         DatabaseEntityId(*min_key)
     }
 
     fn start_new_transaction(&self) -> RequestId {
         let mut transactions = self.db.tr.write().unwrap();
-        let request = transactions.insert(RwLock::new(Some(block_on(self.db.pool.write().unwrap().begin()).unwrap())));
+        let request = transactions.insert(RwLock::new(Some(
+            block_on(self.db.pool.write().unwrap().begin()).unwrap(),
+        )));
         RequestId(request)
     }
 
@@ -107,12 +112,14 @@ pub fn flush_component_to_db<T: ComponentMapper>(
     <T as ComponentMapper>::Component: bevy_ecs::component::Component,
 {
     println!("flushing component to db {}", type_name::<T>());
-    for flush_event in flush_events.read() { 
+    for flush_event in flush_events.read() {
         for entity in index.lookup(&flush_event.request) {
             println!("flushing entity: {:?}", entity);
             if let (db_entity, Some(comp)) = query.get(entity).unwrap() {
                 println!("db_entity: {:?}", db_entity);
-                db_query.update_or_insert_component(db_entity, comp).unwrap();
+                db_query
+                    .update_or_insert_component(db_entity, comp)
+                    .unwrap();
             }
         }
     }

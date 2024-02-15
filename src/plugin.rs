@@ -3,7 +3,6 @@ use std::sync::RwLock;
 use crate::*;
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
-use futures::executor::block_on;
 
 pub struct EntityRelationMapperPlugin {
     flush_schedule: RwLock<Option<Schedule>>,
@@ -12,8 +11,7 @@ pub struct EntityRelationMapperPlugin {
 impl EntityRelationMapperPlugin {
     pub fn new() -> Self {
         let mut flush_schedule = Schedule::new(PostUpdate);
-        flush_schedule
-            .add_systems(commit_transaction);
+        flush_schedule.add_systems(commit_transaction);
         EntityRelationMapperPlugin {
             flush_schedule: RwLock::new(Some(flush_schedule)),
         }
@@ -46,12 +44,4 @@ fn commit_transaction(db: Res<AnyDatabaseResource>, mut flush_events: EventReade
     for flush_event in flush_events.read() {
         db.commit_transaction(flush_event.request);
     }
-}
-
-fn start_new_transaction(db: Res<AnyDatabaseResource>, flush_event: EventReader<FlushEvent>) {
-    if flush_event.is_empty() {
-        return;
-    }
-
-    let _ = db.start_new_transaction();
 }
