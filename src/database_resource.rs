@@ -1,6 +1,7 @@
-use std::{borrow::BorrowMut, sync::{Arc, RwLock}};
+use std::{any::type_name, borrow::BorrowMut, sync::{Arc, RwLock}};
 
 use bevy_ecs::prelude::*;
+use bevy_mod_index::index::Index;
 use futures::executor::block_on;
 use generational_arena::Arena;
 use sqlx::Transaction;
@@ -97,20 +98,22 @@ impl DatabaseResource for AnyDatabaseResource {
     }
 }
 
-
-
 pub fn flush_component_to_db<T: ComponentMapper>(
     mut flush_events: EventReader<FlushEvent>,
-    query: Query<(&DatabaseEntity, &<T as ComponentMapper>::Component)>,
+    query: Query<(&DatabaseEntity, Option<&<T as ComponentMapper>::Component>)>,
+    mut index: Index<RequestIdIndex>,
     db_query: DatabaseQuery<&T>,
 ) where
     <T as ComponentMapper>::Component: bevy_ecs::component::Component,
 {
+    println!("flushing component to db {}", type_name::<T>());
     for flush_event in flush_events.read() { 
-        for (db_entity, component) in query.iter() {
-            db_query
-                .update_or_insert_component(db_entity, component)
-                .unwrap();
+        for entity in index.lookup(&flush_event.request) {
+            println!("flushing entity: {:?}", entity);
+            if let (db_entity, Some(comp)) = query.get(entity).unwrap() {
+                println!("db_entity: {:?}", db_entity);
+                db_query.update_or_insert_component(db_entity, comp).unwrap();
+            }
         }
     }
 }

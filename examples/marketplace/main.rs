@@ -18,6 +18,8 @@ pub struct Purchase {
     pub request: RequestId,
 }
 
+
+
 /**
  * Creates a new item to sell
  */
@@ -291,17 +293,17 @@ fn preload_events(
     );
     purchase_events.send(purchase_event);
 
-    let purchase_event = Purchase {
-        purchaser: DatabaseEntityId(PURCHASER_ID),
-        item: DatabaseEntityId(MARKET_ITEM_ID),
-        request: db.start_new_transaction(),
-    };
+    // let purchase_event = Purchase {
+    //     purchaser: DatabaseEntityId(PURCHASER_ID),
+    //     item: DatabaseEntityId(MARKET_ITEM_ID),
+    //     request: db.start_new_transaction(),
+    // };
 
-    println!(
-        "\tPreloading purchase event:\n\t\tbuyer {:?}, item {:?}",
-        purchase_event.purchaser, purchase_event.item
-    );
-    purchase_events.send(purchase_event);
+    // println!(
+    //     "\tPreloading purchase event:\n\t\tbuyer {:?}, item {:?}",
+    //     purchase_event.purchaser, purchase_event.item
+    // );
+    // purchase_events.send(purchase_event);
 
     println!();
 }
@@ -329,7 +331,9 @@ async fn main() {
     let mut erm_plugin = EntityRelationMapperPlugin::new();
     erm_plugin
         .add_flush_system(flush_component_to_db::<ItemQuery>)
-        .add_flush_system(flush_component_to_db::<UserQuery>);
+        .add_flush_system(flush_component_to_db::<UserQuery>)
+        .add_flush_system(flush_component_to_db::<PurchaseItemQuery>)
+    ;
 
     App::new()
         .set_runner(runner)

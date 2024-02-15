@@ -9,8 +9,9 @@ keywords = [
     "bevy",
 ]
 
-[[example]]
+[[examples]]
 name = "marketplace"
+
 
 [dependencies]
 async-trait = "0.1.77"
@@ -22,54 +23,9 @@ futures = "0.3.30"
 sqlx = { version = "0.7.3", features = ["sqlite", "runtime-tokio"] }
 tokio = { version = "1.36.0", features = ["full"] }
 generational-arena = "0.2.9"
+bevy_reflect = "0.12.1"
+bevy_ecs_macros = "0.12.1"
+bevy_utils = "0.12.1"
 
 [dev-dependencies]
 prettytable-rs = "0.10.0"
-
-[dependencies.async-channel]
-version = "1.4"
-
-[dependencies.bevy_ecs_macros]
-version = "0.12.1"
-
-[dependencies.bevy_ptr]
-version = "0.12.1"
-
-[dependencies.bevy_reflect]
-version = "0.12.1"
-optional = true
-
-[dependencies.bevy_tasks]
-version = "0.12.1"
-
-[dependencies.bevy_utils]
-version = "0.12.1"
-
-[dependencies.downcast-rs]
-version = "1.2"
-
-[dependencies.event-listener]
-version = "2.5"
-
-[dependencies.fixedbitset]
-version = "0.4.2"
-
-[dependencies.rustc-hash]
-version = "1.1"
-
-[dependencies.serde]
-version = "1"
-
-[dependencies.thiserror]
-version = "1.0"
-
-[dependencies.thread_local]
-version = "1.1.4"
-
-[dev-dependencies.rand]
-version = "0.8"
-
-[features]
-default = ["bevy_reflect"]
-multi-threaded = ["bevy_tasks/multi-threaded"]
-trace = []

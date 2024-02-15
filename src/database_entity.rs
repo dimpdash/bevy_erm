@@ -6,27 +6,7 @@ use bevy_utils::petgraph::visit::Data;
 
 use crate::{DatabaseEntityWithRequest, RequestId};
 
-pub struct DatabaseEntityIndex;
-impl IndexInfo for DatabaseEntityIndex {
-    type Component = DatabaseEntity;
-
-    type Value = DatabaseEntityId;
-
-    type Storage = NoStorage<Self>;
-
-    fn value(c: &Self::Component) -> Self::Value {
-        c.id
-    }
-}
-
-pub fn add_event<T>(world: &mut World)
-where
-    T: Event,
-{
-    if !world.contains_resource::<Events<T>>() {
-        world.init_resource::<Events<T>>();
-    }
-}
+pub trait RequestIdIndexInfo: IndexInfo<Value = RequestId> {}
 
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Debug, sqlx::FromRow)]
 pub struct Persisted(pub bool);
@@ -83,3 +63,18 @@ impl DatabaseEntityWithRequest for DatabaseEntity {
         &self.id
     }
 }
+
+pub struct DatabaseEntityIndex;
+impl IndexInfo for DatabaseEntityIndex {
+    type Component = DatabaseEntity;
+
+    type Value = DatabaseEntityId;
+
+    type Storage = NoStorage<Self>;
+
+    fn value(c: &Self::Component) -> Self::Value {
+        c.id
+    }
+}
+
+

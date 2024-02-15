@@ -219,11 +219,26 @@ pub trait ComponentMapper {
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>;
 }
 
+#[derive(Component)]
+pub struct NullComponent();
+
+impl RequestIdIndexInfo for NullComponent {}
+
 // To satisfy the type system when a DBQueryInfo is composed of other DBQueryInfos
+impl IndexInfo for NullComponent {
+    type Component = NullComponent;
+    type Value = RequestId;
+    type Storage = NoStorage<Self>;
+
+    fn value(c: &Self::Component) -> Self::Value {
+        RequestId(generational_arena::Index::from_raw_parts(0, 0))
+    }
+}
+
 pub struct NullMapper;
 #[async_trait]
 impl ComponentMapper for NullMapper {
-    type Component = ();
+    type Component = NullComponent;
 
     async fn get<'c, E>(_e: E, _db_entity: &DatabaseEntityId) -> Result<Self::Component, ()>
     where
