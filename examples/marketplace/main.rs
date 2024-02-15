@@ -15,6 +15,7 @@ use queries::*;
 pub struct Purchase {
     pub item: DatabaseEntity,
     pub purchaser: DatabaseEntity,
+    pub request: RequestId,
 }
 
 /**
@@ -32,7 +33,9 @@ pub struct GetSellerItems {
 }
 
 #[derive(Event)]
-pub struct PurchaseResponse;
+pub struct PurchaseResponse{
+    request: RequestId,
+}
 
 fn purchase_system(
     mut events: EventReader<Purchase>,
@@ -61,7 +64,7 @@ fn purchase_system(
 
         db_query_purchased.create(purchased_item).unwrap();
 
-        response.send(PurchaseResponse);
+        response.send(PurchaseResponse{request: event.request});
     }
 }
 
@@ -255,6 +258,8 @@ fn preload_events(
 ) {
     println!("Preloading events:");
 
+    // create two purchase events
+
     let purchase_event = Purchase {
         purchaser: DatabaseEntity {
             id: PURCHASER_ID,
@@ -266,6 +271,27 @@ fn preload_events(
             persisted: true.into(),
             dirty: false,
         },
+        request: 0,
+    };
+
+    println!(
+        "\tPreloading purchase event:\n\t\tbuyer {:?}, item {:?}",
+        purchase_event.purchaser.id, purchase_event.item.id
+    );
+    purchase_events.send(purchase_event);
+
+    let purchase_event = Purchase {
+        purchaser: DatabaseEntity {
+            id: PURCHASER_ID,
+            persisted: true.into(),
+            dirty: false,
+        },
+        item: DatabaseEntity {
+            id: MARKET_ITEM_ID,
+            persisted: true.into(),
+            dirty: false,
+        },
+        request: 1,
     };
 
     println!(

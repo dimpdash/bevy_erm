@@ -7,3 +7,6 @@ pub use database_entity::*;
 pub use database_query::*;
 pub use database_resource::*;
 pub use plugin::*;
+
+
+pub type RequestId = i64;
