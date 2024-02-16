@@ -1,15 +1,21 @@
 mod components;
 mod queries;
 
-use bevy_ecs::prelude::*;
+use std::any::TypeId;
+use casey::lower;
+
+use bevy_ecs::{component::{self, ComponentId}, prelude::*, ptr::Ptr, system::SystemParam, world::unsafe_world_cell::UnsafeWorldCell};
 use bevy_erm::*;
 #[macro_use]
 extern crate prettytable;
 
 use bevy_app::{prelude::*, AppExit};
+use bevy_utils::petgraph::visit::Data;
 use components::*;
 use futures::executor::block_on;
 use queries::*;
+use sqlx::{Any, Database};
+
 
 #[derive(Event, Debug)]
 pub struct Purchase {
@@ -149,8 +155,8 @@ fn create_tables(db: Res<AnyDatabaseResource>, mut print_tables: EventWriter<Pri
 
     println!("Tables created");
 
-    let request = db.start_new_transaction();
-    print_tables.send(PrintTable { request });
+    // let request = db.start_new_transaction();
+    // print_tables.send(PrintTable { request });
 }
 
 #[derive(Event)]
@@ -186,7 +192,7 @@ fn print_purchased_items_table(
     mut print_table_events: EventReader<PrintTable>,
 ) {
     for print_table in print_table_events.read() {
-        println!("Printing purchased items");
+        println!("Printing purchased items, {}", print_table.request);
         let purchased_items: Vec<(&DatabaseEntity, &PurchasedItem)> = purchased_items
             .load_components::<(&DatabaseEntity, &PurchasedItem)>(
                 print_table.request,
@@ -275,26 +281,6 @@ fn flush_purchase(
     }
 }
 
-pub struct MarketplacePlugin;
-
-impl Plugin for MarketplacePlugin {
-    fn build(&self, app: &mut App) {
-        app.add_event::<Purchase>()
-            .add_event::<Sell>()
-            .add_event::<GetSellerItems>()
-            .add_event::<PurchaseResponse>()
-            .add_event::<PrintTable>()
-            .add_systems(Startup, create_tables)
-            .add_systems(PostStartup, preload_events)
-            .add_systems(PreUpdate, should_exit)
-            .add_systems(Update, purchase_system)
-            .add_systems(Update, flush_purchase.after(purchase_system))
-            .add_systems(PostUpdate, print_items_table)
-            .add_systems(PostUpdate, print_users_table)
-            .add_systems(PostUpdate, print_purchased_items_table);
-    }
-}
-
 fn preload_events(
     mut purchase_events: EventWriter<Purchase>,
     _get_seller_items: EventWriter<GetSellerItems>,
@@ -311,22 +297,22 @@ fn preload_events(
     };
 
     println!(
+        "\tPreloading purchase event:\n\t\tbuyer {}, item {}, request {}",
+        purchase_event.purchaser, purchase_event.item, purchase_event.request
+    );
+    purchase_events.send(purchase_event);
+
+    let purchase_event = Purchase {
+        purchaser: DatabaseEntityId(PURCHASER_ID),
+        item: DatabaseEntityId(MARKET_ITEM_ID),
+        request: db.start_new_transaction(),
+    };
+
+    println!(
         "\tPreloading purchase event:\n\t\tbuyer {:?}, item {:?}",
         purchase_event.purchaser, purchase_event.item
     );
     purchase_events.send(purchase_event);
-
-    // let purchase_event = Purchase {
-    //     purchaser: DatabaseEntityId(PURCHASER_ID),
-    //     item: DatabaseEntityId(MARKET_ITEM_ID),
-    //     request: db.start_new_transaction(),
-    // };
-
-    // println!(
-    //     "\tPreloading purchase event:\n\t\tbuyer {:?}, item {:?}",
-    //     purchase_event.purchaser, purchase_event.item
-    // );
-    // purchase_events.send(purchase_event);
 
     println!();
 }
@@ -359,13 +345,145 @@ fn runner(mut app: App) {
     }
 }
 
+pub struct MarketplacePlugin;
+
+impl Plugin for MarketplacePlugin {
+    fn build(&self, app: &mut App) {
+        app.add_event::<Purchase>()
+            .add_event::<Sell>()
+            .add_event::<GetSellerItems>()
+            .add_event::<PurchaseResponse>()
+            .add_event::<PrintTable>()
+            .add_systems(Startup, create_tables)
+            .add_systems(PostStartup, preload_events)
+            .add_systems(PreUpdate, should_exit)
+            .add_systems(Update, purchase_system)
+            .add_systems(Update, flush_purchase.after(purchase_system))
+            .add_systems(PostUpdate, print_items_table)
+            .add_systems(PostUpdate, print_users_table)
+            .add_systems(PostUpdate, print_purchased_items_table);
+    }
+}
+
+
+// macro_rules! make_component_mapper_mapper {
+//     ($mappper_name:ident, $($name:ident)+) => {
+//         pub struct $mappper_name;
+//         impl ComponentMapperMapper for $mappper_name {
+//             fn update_or_insert_component(
+//                 db_entity: DatabaseEntity,
+//                 entity: Entity,
+//                 component_id: TypeId,
+//                 request: RequestId,
+//                 world: &mut World,
+//             ) -> Result<(), ()> {
+//                 let db = world.get_resource::<AnyDatabaseResource>().unwrap();
+//                 get_transaction!(tr, request, db);
+
+//                 let ( $(lower!($name), )+ ) = ( $(TypeId::of::<$name>(), )+ );
+
+//                 match component_id {
+//                     $(
+//                         lower!($name) => {
+//                             let component = world.get::<<ItemQuery as ComponentMapper>::Component>(entity).unwrap();
+//                             SingleComponentRetriever::<ItemQuery, AnyDatabaseResource>::update_component(db, world.as_unsafe_world_cell(), &db_entity, component);
+//                         }
+//                     )+
+//                }
+//                 Ok(())
+//             }
+//         }
+//     };
+// }
+
+
+// make_component_mapper_mapper!(MarketplaceComponentMapperMapper, ItemQuery);
+
+pub struct MarketplaceComponentMapperMapper;
+impl ComponentMapperMapper for MarketplaceComponentMapperMapper {
+    fn update_or_insert_component(
+        db_entity: DatabaseEntity,
+        entity: Entity,
+        component_type_id: TypeId,
+        component_id: ComponentId,
+        request: RequestId,
+        world: &mut World,
+    ) -> Result<(), ()> {
+        let unsafe_world = world.as_unsafe_world_cell();
+        let db = unsafe {unsafe_world.world().get_resource::<AnyDatabaseResource>().unwrap()};
+        get_transaction!(tr, request, db);
+
+        if false {
+            unreachable!();
+        } else if component_type_id == TypeId::of::<MarketItem>() {
+            let component: &MarketItem  = unsafe { unsafe_world.world().get_by_id(entity, component_id).unwrap().deref() };
+
+            println!("Updating or inserting MarketItem");
+            SingleComponentRetriever::<ItemQuery, AnyDatabaseResource>::update_or_insert_component(
+                db,
+                unsafe_world,
+                &db_entity,
+                component,
+            )?;
+        } else if component_type_id == TypeId::of::<PurchasedItem>() {
+            let component: &PurchasedItem = unsafe { unsafe_world.world().get_by_id(entity, component_id).unwrap().deref() };
+
+            println!("Updating or inserting PurchasedItem");
+            SingleComponentRetriever::<PurchaseItemQuery, AnyDatabaseResource>::update_or_insert_component(
+                db,
+                unsafe_world,
+                &db_entity,
+                component,
+            )?;
+        } else if component_type_id == TypeId::of::<User>() {
+            let component: &User = unsafe { unsafe_world.world().get_by_id(entity, component_id).unwrap().deref() };
+
+            println!("Updating or inserting User");
+            SingleComponentRetriever::<UserQuery, AnyDatabaseResource>::update_or_insert_component(
+                db,
+                unsafe_world,
+                &db_entity,
+                component,
+            )?;
+        } else if component_type_id == TypeId::of::<Buyer>() {
+            let component: &Buyer = unsafe { unsafe_world.world().get_by_id(entity, component_id).unwrap().deref() };
+
+            println!("Updating or inserting Buyer");
+            SingleComponentRetriever::<BuyerQuery, AnyDatabaseResource>::update_or_insert_component(
+                db,
+                unsafe_world,
+                &db_entity,
+                component,
+            )?;
+        } else if component_type_id == TypeId::of::<Seller>() {
+            let component: &Seller = unsafe { unsafe_world.world().get_by_id(entity, component_id).unwrap().deref() };
+
+            println!("Updating or inserting Seller");
+            SingleComponentRetriever::<SellerQuery, AnyDatabaseResource>::update_or_insert_component(
+                db,
+                unsafe_world,
+                &db_entity,
+                component,
+            )?;
+        } else {
+            return Err(());
+        }
+        Ok(())
+    }
+}
+
+fn w(world: &mut World) {
+
+}
+
+// impl_flush_component_to_db!(ItemQuery PurchaseItemQuery UserQuery BuyerQuery SellerQuery);
+
 #[tokio::main]
 async fn main() {
     let mut erm_plugin = EntityRelationMapperPlugin::new();
     erm_plugin
-        .add_flush_system(flush_component_to_db::<ItemQuery>)
-        .add_flush_system(flush_component_to_db::<UserQuery>)
-        .add_flush_system(flush_component_to_db::<PurchaseItemQuery>);
+        .add_flush_system(w);
+        // .add_flush_system(flush_component_to_db);
 
     App::new()
         .set_runner(runner)

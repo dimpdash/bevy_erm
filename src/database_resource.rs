@@ -1,10 +1,11 @@
 use std::{
-    any::type_name,
+    any::{type_name, Any, TypeId},
     sync::{Arc, RwLock},
 };
 
-use bevy_ecs::prelude::*;
+use bevy_ecs::{component::ComponentId, prelude::*};
 use bevy_mod_index::index::Index;
+use bevy_reflect::DynamicStruct;
 use futures::executor::block_on;
 use generational_arena::Arena;
 use sqlx::Transaction;
@@ -103,24 +104,58 @@ impl DatabaseResource for AnyDatabaseResource {
     }
 }
 
-pub fn flush_component_to_db<T: ComponentMapper>(
-    mut flush_events: EventReader<FlushEvent>,
-    query: Query<(&DatabaseEntity, Option<&<T as ComponentMapper>::Component>)>,
-    mut index: Index<RequestIdIndex>,
-    db_query: DatabaseQuery<&T>,
-) where
-    <T as ComponentMapper>::Component: bevy_ecs::component::Component,
+pub trait ComponentMapperMapper 
 {
-    println!("flushing component to db {}", type_name::<T>());
-    for flush_event in flush_events.read() {
-        for entity in index.lookup(&flush_event.request) {
-            println!("flushing entity: {:?}", entity);
-            if let (db_entity, Some(comp)) = query.get(entity).unwrap() {
-                println!("db_entity: {:?}", db_entity);
-                db_query
-                    .update_or_insert_component(db_entity, comp)
-                    .unwrap();
+    fn update_or_insert_component(db_entity: DatabaseEntity, entity: Entity,component_type_id: TypeId, type_id: ComponentId, request: RequestId, world: &mut World) -> Result<(), ()>;
+}
+
+#[macro_export]
+macro_rules! impl_flush_component_to_db {
+    ($($name:ident)+) => {
+        use bevy_mod_index::index::Index;
+        use bevy_ecs::prelude::*;
+
+        pub fn flush_component_to_db(
+            flush_events: EventReader<FlushEvent>,
+            index: Index<RequestIdIndex>,
+            query: Query<(&DatabaseEntity, $(Option<&<$name as ComponentMapper>::Component>,)+)>,
+            db_query: DatabaseQuery<($(&$name, )+)>  
+        ) {
+            for flush_event in flush_events.read() {
+                for entity in index.lookup(&flush_event.request) {
+                    let (db_entity, $(lower!($name), )+) = query.get(entity).unwrap();
+                    
+                    $(
+                        if let Some(comp) = lower!($name) {
+                            db_query
+                                .update_or_insert_component(db_entity, comp)
+                                .unwrap();
+                        }
+                    )+
+                }
+        
+        
+                println!("Committing transaction");
+                db.commit_transaction(flush_event.request);
             }
         }
+    };
+}
+
+
+pub fn flush_in_orde2<'w1,'w2,'s, DBQ: DBQueryInfo>(
+    mut flush_events: EventReader<FlushEvent>,
+    mut index: Index<RequestIdIndex>,
+    db_query: DatabaseQuery<DBQ>,  
+) 
+    where 'w1: 'w2,
+    's: 'w2
+{
+
+    for flush_event in flush_events.read() {
+        for entity in index.lookup(&flush_event.request) {
+            db_query.update_or_insert_component(entity);
+        }
     }
+
 }
