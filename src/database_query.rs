@@ -198,8 +198,12 @@ impl<'w, 's, Q: DBQueryInfo> DatabaseQuery<'w, 's, Q> {
                 Q::insert_component(&self.db, self.world, db_entity, comp)
             }
         }
+    }
 
+    pub fn commit(&self, request: RequestId) -> Result<(), ()> {
+        self.db.commit_transaction(request);
 
+        Ok(())
     }
 }
 

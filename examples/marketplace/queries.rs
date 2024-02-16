@@ -540,10 +540,6 @@ impl ComponentMapper for PurchaseItemQuery {
     where
         E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
-        println!(
-            "INSERT INTO purchased_items (id, item, buyer) VALUES ({:?}, {:?}, {:?})",
-            db_entity, component.item, component.buyer
-        );
         let r = sqlx::query("INSERT INTO purchased_items (id, item, buyer) VALUES (?, ?, ?)")
             .bind(db_entity.0)
             .bind(component.item)

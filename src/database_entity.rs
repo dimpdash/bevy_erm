@@ -34,7 +34,7 @@ pub struct DatabaseEntityId(pub i64);
 
 impl Display for DatabaseEntityId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "DatabaseEntityId({})", self.0)
+        write!(f, "{}", self.0)
     }
 }
 

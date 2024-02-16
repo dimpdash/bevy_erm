@@ -102,8 +102,6 @@ fn create_tables(db: Res<AnyDatabaseResource>, mut print_tables: EventWriter<Pri
         // let mut conn = pool.acquire().await.unwrap();
         get_transaction!(conn, request, db);
 
-        println!("Creating tables");
-
         // create the tables
         // market items table
         sqlx::query("CREATE TABLE items (id INTEGER PRIMARY KEY, seller_id INTEGER, name TEXT, price INTEGER)")
@@ -148,12 +146,8 @@ fn create_tables(db: Res<AnyDatabaseResource>, mut print_tables: EventWriter<Pri
             .execute(&mut **conn)
             .await
             .unwrap();
-
-        println!("Commiting");
     });
     db.commit_transaction(request);
-
-    println!("Tables created");
 
     // let request = db.start_new_transaction();
     // print_tables.send(PrintTable { request });
@@ -192,7 +186,6 @@ fn print_purchased_items_table(
     mut print_table_events: EventReader<PrintTable>,
 ) {
     for print_table in print_table_events.read() {
-        println!("Printing purchased items, {}", print_table.request);
         let purchased_items: Vec<(&DatabaseEntity, &PurchasedItem)> = purchased_items
             .load_components::<(&DatabaseEntity, &PurchasedItem)>(
                 print_table.request,
@@ -272,9 +265,7 @@ fn flush_purchase(
     mut purchase_events: EventReader<PurchaseResponse>,
     mut flush: EventWriter<FlushEvent>,
 ) {
-    println!("Flushing purchase events before loop");
     for purchase_event in purchase_events.read() {
-        println!("Flushing purchase events");
         flush.send(FlushEvent {
             request: purchase_event.request,
         });
@@ -290,30 +281,19 @@ fn preload_events(
 
     // create two purchase events
 
-    let purchase_event = Purchase {
-        purchaser: DatabaseEntityId(PURCHASER_ID),
-        item: DatabaseEntityId(MARKET_ITEM_ID),
-        request: db.start_new_transaction(),
-    };
+    for _ in 0..2 {
+        let purchase_event = Purchase {
+            purchaser: DatabaseEntityId(PURCHASER_ID),
+            item: DatabaseEntityId(MARKET_ITEM_ID),
+            request: db.start_new_transaction(),
+        };
 
-    println!(
-        "\tPreloading purchase event:\n\t\tbuyer {}, item {}, request {}",
-        purchase_event.purchaser, purchase_event.item, purchase_event.request
-    );
-    purchase_events.send(purchase_event);
-
-    let purchase_event = Purchase {
-        purchaser: DatabaseEntityId(PURCHASER_ID),
-        item: DatabaseEntityId(MARKET_ITEM_ID),
-        request: db.start_new_transaction(),
-    };
-
-    println!(
-        "\tPreloading purchase event:\n\t\tbuyer {:?}, item {:?}",
-        purchase_event.purchaser, purchase_event.item
-    );
-    purchase_events.send(purchase_event);
-
+        println!(
+            "\tPreloading purchase event:\n\t\tbuyer {}, item {}, request {}",
+            purchase_event.purchaser, purchase_event.item, purchase_event.request
+        );
+        purchase_events.send(purchase_event);
+    }
     println!();
 }
 
@@ -472,22 +452,14 @@ impl ComponentMapperMapper for MarketplaceComponentMapperMapper {
     }
 }
 
-fn w(world: &mut World) {
-
-}
-
 // impl_flush_component_to_db!(ItemQuery PurchaseItemQuery UserQuery BuyerQuery SellerQuery);
 
 #[tokio::main]
 async fn main() {
-    let mut erm_plugin = EntityRelationMapperPlugin::new();
-    erm_plugin
-        .add_flush_system(w);
-        // .add_flush_system(flush_component_to_db);
-
     App::new()
         .set_runner(runner)
-        .add_plugins(erm_plugin)
+        .add_plugins(EntityRelationMapperPlugin)
+        .add_systems(PostUpdate, flush_component_to_db::<(Option<&UserQuery>, Option<&PurchaseItemQuery>, Option<&BuyerQuery>, Option<&SellerQuery>, Option<&ItemQuery>)>)
         .add_plugins(MarketplacePlugin)
         .run();
 }
