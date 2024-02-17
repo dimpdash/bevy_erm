@@ -1,5 +1,7 @@
 use std::{
-    any::TypeId, ops::{Deref, DerefMut}, sync::{Arc, RwLock}
+    any::TypeId,
+    ops::{Deref, DerefMut},
+    sync::{Arc, RwLock},
 };
 
 use bevy_ecs::{component::ComponentId, prelude::*};
@@ -7,10 +9,10 @@ use bevy_mod_index::index::Index;
 
 use futures::executor::block_on;
 use generational_arena::Arena;
-use sqlx::{Executor, Transaction};
+use sqlx::Transaction;
 
-use crate::database_query::*;
 use crate::database_entity::*;
+use crate::database_query::*;
 
 // Initially was going to have this trait to allow for implementing for different sql databases
 // but the type system became too complex (for me)
@@ -18,14 +20,14 @@ use crate::database_entity::*;
 // Left the indirection in case I want to change it later
 
 pub trait DatabaseResource: Resource + Default {
-    type Executor; 
+    type Executor;
     type Transaction: Deref<Target = Self::Executor> + DerefMut;
 
     // A way to get a unique key for the database
     fn get_key(&self) -> DatabaseEntityId;
     fn start_new_transaction(&self) -> RequestId;
     fn try_start_new_transaction(&self) -> Option<RequestId>;
-    fn get_transaction(&self, request: RequestId) -> Arc<RwLock<Option<Self::Transaction>>>; 
+    fn get_transaction(&self, request: RequestId) -> Arc<RwLock<Option<Self::Transaction>>>;
 
     fn commit_transaction(&self, request: RequestId);
 }
@@ -124,7 +126,13 @@ pub trait ComponentMapperMapper {
     ) -> Result<(), ()>;
 }
 
-pub fn flush_component_to_db<'w1, 'w2, 's, DBQ: DBQueryInfo<DbResource>, DbResource: DatabaseResource>(
+pub fn flush_component_to_db<
+    'w1,
+    'w2,
+    's,
+    DBQ: DBQueryInfo<DbResource>,
+    DbResource: DatabaseResource,
+>(
     mut flush_events: EventReader<FlushEvent>,
     mut index: Index<RequestIdIndex>,
     db_query: DatabaseQuery<DBQ, DbResource>,

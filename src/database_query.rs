@@ -10,7 +10,6 @@ use bevy_mod_index::prelude::*;
 use bevy_utils::hashbrown::HashSet;
 use casey::lower;
 use futures::executor::block_on;
-use sqlx::Executor;
 
 pub trait ReturnSelector<'w> {
     type ReturnItem;
@@ -21,14 +20,13 @@ pub trait ReturnSelector<'w> {
     ) -> Vec<Self::ReturnItem>;
 }
 
-pub type DatabaseTransaction<'a,'b, D> = &'a mut <D as DatabaseResource>::Executor;
+pub type DatabaseTransaction<'a, 'b, D> = &'a mut <D as DatabaseResource>::Executor;
 
 // The items to be returned as readonly or mutable
 // Use the World queries underlying specification
-pub type ReadOnlyItem<'a, Q, DbResource> = ROQueryItem<'a, <Q as DBQueryInfo<DbResource>>::WorldQuery<'a>>;
+pub type ReadOnlyItem<'a, Q, DbResource> =
+    ROQueryItem<'a, <Q as DBQueryInfo<DbResource>>::WorldQuery<'a>>;
 pub type Item<'a, Q, DbResource> = QueryItem<'a, <Q as DBQueryInfo<DbResource>>::WorldQuery<'a>>;
-
-
 
 pub trait DBQueryInfo<DbResource: DatabaseResource> {
     // type Mapper: ComponentMapper<Executor = DbResource::Transaction>;
@@ -88,14 +86,13 @@ pub struct DatabaseQuery<'world, 'state, Q: DBQueryInfo<DbResource>, DbResource:
     phantom2: std::marker::PhantomData<(&'state (), Q)>,
 }
 
-
 pub trait B {}
 
 pub trait A<B> {}
 
-
 // So query can be constructed by the system
-unsafe impl<'w, 's, I: DBQueryInfo<DbResource>, DbResource: DatabaseResource> SystemParam for DatabaseQuery<'w, 's, I, DbResource>
+unsafe impl<'w, 's, I: DBQueryInfo<DbResource>, DbResource: DatabaseResource> SystemParam
+    for DatabaseQuery<'w, 's, I, DbResource>
 where
     I: DBQueryInfo<DbResource> + 'static,
 {
@@ -144,12 +141,20 @@ pub trait DatabaseEntityWithRequest {
     fn id(&self) -> &DatabaseEntityId;
 }
 
-impl<'w, 's, Q: DBQueryInfo<DbResource>, DbResource: DatabaseResource> DatabaseQuery<'w, 's, Q, DbResource> {
-    pub fn get<D: DatabaseEntityWithRequest>(&self, db_entity: &D) -> Result<ReadOnlyItem<Q, DbResource>, ()> {
+impl<'w, 's, Q: DBQueryInfo<DbResource>, DbResource: DatabaseResource>
+    DatabaseQuery<'w, 's, Q, DbResource>
+{
+    pub fn get<D: DatabaseEntityWithRequest>(
+        &self,
+        db_entity: &D,
+    ) -> Result<ReadOnlyItem<Q, DbResource>, ()> {
         Q::get(self.db.as_ref(), self.world, db_entity)
     }
 
-    pub fn get_mut<D: DatabaseEntityWithRequest>(&self, db_entity: &D) -> Result<Item<Q, DbResource>, ()> {
+    pub fn get_mut<D: DatabaseEntityWithRequest>(
+        &self,
+        db_entity: &D,
+    ) -> Result<Item<Q, DbResource>, ()> {
         Q::get_mut(self.db.as_ref(), self.world, db_entity)
     }
 
@@ -211,14 +216,13 @@ impl<'w, 's, Q: DBQueryInfo<DbResource>, DbResource: DatabaseResource> DatabaseQ
 }
 
 #[async_trait]
-pub trait ComponentMapper
-{
+pub trait ComponentMapper {
     type Component;
     type Executor;
 
     async fn get<'c>(
-        e: &mut Self::Executor, 
-        db_entity: &DatabaseEntityId
+        e: &mut Self::Executor,
+        db_entity: &DatabaseEntityId,
     ) -> Result<Self::Component, ()>;
 
     async fn update_component<'c>(
@@ -226,14 +230,12 @@ pub trait ComponentMapper
         db_entity: &DatabaseEntityId,
         component: &Self::Component,
     ) -> Result<(), ()>;
-    
 
     async fn insert_component<'c>(
         tr: &mut Self::Executor,
         db_entity: &DatabaseEntityId,
         component: &Self::Component,
     ) -> Result<(), ()>;
-    
 }
 
 #[derive(Component)]
@@ -259,8 +261,8 @@ impl ComponentMapper for NullMapper {
     type Executor = ();
 
     async fn get<'c>(
-        _e: &mut Self::Executor, 
-        _db_entity: &DatabaseEntityId
+        _e: &mut Self::Executor,
+        _db_entity: &DatabaseEntityId,
     ) -> Result<Self::Component, ()> {
         unimplemented!()
     }
@@ -280,7 +282,7 @@ impl ComponentMapper for NullMapper {
     ) -> Result<(), ()> {
         unimplemented!()
     }
-}   
+}
 
 // Used to help speicfy whether the returned component is read only or mutable
 pub trait ReadMarker<DbResource: DatabaseResource>: DBQueryInfo<DbResource> {}
@@ -289,11 +291,15 @@ pub trait ReadMarker<DbResource: DatabaseResource>: DBQueryInfo<DbResource> {}
 // &, &mut, Option
 pub trait TupleMarker<DbResource: DatabaseResource>: DBQueryInfo<DbResource> {}
 
-impl<T: DBQueryInfo<DbResource>, DbResource: DatabaseResource> TupleMarker<DbResource> for Option<T> {}
+impl<T: DBQueryInfo<DbResource>, DbResource: DatabaseResource> TupleMarker<DbResource>
+    for Option<T>
+{
+}
 
-impl<T: DBQueryInfo<DbResource>, DbResource: DatabaseResource> DBQueryInfo<DbResource> for Option<T> {
+impl<T: DBQueryInfo<DbResource>, DbResource: DatabaseResource> DBQueryInfo<DbResource>
+    for Option<T>
+{
     type DerefItem = Option<<T as DBQueryInfo<DbResource>>::DerefItem>;
-
 
     // type Mapper = <T as DBQueryInfo<DbResource>>::Mapper;
 
@@ -366,19 +372,24 @@ impl<T: DBQueryInfo<DbResource>, DbResource: DatabaseResource> DBQueryInfo<DbRes
     }
 }
 
-impl<'a, T: ComponentMapper, DbResource: DatabaseResource<Executor = T::Executor>> TupleMarker<DbResource> for &T
-    where 
-        <T as ComponentMapper>::Component: Component,
-    {}
-
-impl<'a, T: ComponentMapper, DbResource: DatabaseResource<Executor = T::Executor>> ReadMarker<DbResource> for &T 
-    where 
-        <T as ComponentMapper>::Component: Component,
-    {}
-
-impl<'b, T: ComponentMapper, DbResource: DatabaseResource<Executor = T::Executor>> DBQueryInfo<DbResource> for &T
+impl<'a, T: ComponentMapper, DbResource: DatabaseResource<Executor = T::Executor>>
+    TupleMarker<DbResource> for &T
 where
-    <T as ComponentMapper>::Component: Component
+    <T as ComponentMapper>::Component: Component,
+{
+}
+
+impl<'a, T: ComponentMapper, DbResource: DatabaseResource<Executor = T::Executor>>
+    ReadMarker<DbResource> for &T
+where
+    <T as ComponentMapper>::Component: Component,
+{
+}
+
+impl<'b, T: ComponentMapper, DbResource: DatabaseResource<Executor = T::Executor>>
+    DBQueryInfo<DbResource> for &T
+where
+    <T as ComponentMapper>::Component: Component,
 {
     type DerefItem = <T as ComponentMapper>::Component;
     // type Mapper = T;
@@ -406,9 +417,7 @@ where
         db_entity: &DatabaseEntity,
         component: ReadOnlyItem<'w, Self, DbResource>,
     ) -> Result<(), ()> {
-        SingleComponentRetriever::<T, DbResource>::update_component(
-            db, world, db_entity, component,
-        )
+        SingleComponentRetriever::<T, DbResource>::update_component(db, world, db_entity, component)
     }
 
     fn insert_component<'w>(
@@ -417,9 +426,7 @@ where
         db_entity: &DatabaseEntity,
         component: ReadOnlyItem<'w, Self, DbResource>,
     ) -> Result<(), ()> {
-        SingleComponentRetriever::<T, DbResource>::insert_component(
-            db, world, db_entity, component,
-        )
+        SingleComponentRetriever::<T, DbResource>::insert_component(db, world, db_entity, component)
     }
 
     fn load_components<'w, R: ReturnSelector<'w>>(
@@ -448,9 +455,15 @@ where
     }
 }
 
-impl<'b, T: ComponentMapper, DbResource: DatabaseResource<Executor = T::Executor>> ReadMarker<DbResource> for &mut T where <T as ComponentMapper>::Component: Component {}
+impl<'b, T: ComponentMapper, DbResource: DatabaseResource<Executor = T::Executor>>
+    ReadMarker<DbResource> for &mut T
+where
+    <T as ComponentMapper>::Component: Component,
+{
+}
 
-impl<'b, T: ComponentMapper, DbResource: DatabaseResource<Executor = T::Executor>> DBQueryInfo<DbResource> for &mut T
+impl<'b, T: ComponentMapper, DbResource: DatabaseResource<Executor = T::Executor>>
+    DBQueryInfo<DbResource> for &mut T
 where
     <T as ComponentMapper>::Component: Component,
 {
@@ -480,9 +493,7 @@ where
         db_entity: &DatabaseEntity,
         component: ReadOnlyItem<'w, Self, DbResource>,
     ) -> Result<(), ()> {
-        SingleComponentRetriever::<T, DbResource>::update_component(
-            db, world, db_entity, component,
-        )
+        SingleComponentRetriever::<T, DbResource>::update_component(db, world, db_entity, component)
     }
 
     fn insert_component<'w>(
@@ -491,9 +502,7 @@ where
         db_entity: &DatabaseEntity,
         component: ReadOnlyItem<'w, Self, DbResource>,
     ) -> Result<(), ()> {
-        SingleComponentRetriever::<T, DbResource>::insert_component(
-            db, world, db_entity, component,
-        )
+        SingleComponentRetriever::<T, DbResource>::insert_component(db, world, db_entity, component)
     }
 
     fn load_components<'w, R: ReturnSelector<'w>>(
@@ -622,23 +631,20 @@ pub struct SingleComponentRetriever<Mapper, DbResource> {
     phantom: std::marker::PhantomData<(Mapper, DbResource)>,
 }
 
-impl<'a,
-    MyMapper: ComponentMapper, 
-    DbResource: DatabaseResource<
-        Executor = <MyMapper as ComponentMapper>::Executor,
-    >
-> SingleComponentRetriever<MyMapper, DbResource>
+impl<
+        'a,
+        MyMapper: ComponentMapper,
+        DbResource: DatabaseResource<Executor = <MyMapper as ComponentMapper>::Executor>,
+    > SingleComponentRetriever<MyMapper, DbResource>
 where
     <MyMapper as ComponentMapper>::Component: Component,
 {
-    fn get_internal<D: DatabaseEntityWithRequest>
-    (
+    fn get_internal<D: DatabaseEntityWithRequest>(
         db: &DbResource,
         world: UnsafeWorldCell<'_>,
         db_entity: &D,
         component_preloaded: Option<<MyMapper as ComponentMapper>::Component>,
-    ) -> Entity 
-    {
+    ) -> Entity {
         let arc = db.get_transaction(*db_entity.request());
         let mut a = arc.write().unwrap();
         let tr = a.as_mut().unwrap();
@@ -715,8 +721,7 @@ where
         ) -> Result<
             Vec<(DatabaseEntity, <MyMapper as ComponentMapper>::Component)>,
             (),
-        >
-        ,
+        >,
     ) -> Result<Vec<Entity>, ()> {
         let components = {
             let arc = db.get_transaction(request);
@@ -772,12 +777,11 @@ impl<'w, C: WorldQuery> ReturnSelector<'w> for C {
     }
 }
 
-impl<'b, 
-    MyMapper: ComponentMapper,
-    DbResource: DatabaseResource<
-        Executor = <MyMapper as ComponentMapper>::Executor,>> 
-DBQueryInfo<DbResource>
-    for SingleComponentRetriever<MyMapper, DbResource>
+impl<
+        'b,
+        MyMapper: ComponentMapper,
+        DbResource: DatabaseResource<Executor = <MyMapper as ComponentMapper>::Executor>,
+    > DBQueryInfo<DbResource> for SingleComponentRetriever<MyMapper, DbResource>
 where
     <MyMapper as ComponentMapper>::Component: Component,
 {

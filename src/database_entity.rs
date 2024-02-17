@@ -1,8 +1,8 @@
 use std::fmt::Display;
 
 use bevy_ecs::component::Component;
-use bevy_mod_index::prelude::*;
 use bevy_ecs::prelude::*;
+use bevy_mod_index::prelude::*;
 
 use crate::DatabaseEntityWithRequest;
 
