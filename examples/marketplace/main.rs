@@ -9,7 +9,6 @@ extern crate prettytable;
 
 use bevy_ecs::prelude::*;
 use bevy_erm::*;
-
 use bevy_app::prelude::*;
 
 use events::*;
@@ -21,7 +20,19 @@ pub struct MarketplacePlugin;
 
 impl Plugin for MarketplacePlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<Purchase>()
+        app
+            .add_plugins(EntityRelationMapperPlugin)
+            .add_systems(
+                PostUpdate,
+                flush_component_to_db::<(
+                    Option<&UserQuery>,
+                    Option<&PurchaseItemQuery>,
+                    Option<&BuyerQuery>,
+                    Option<&SellerQuery>,
+                    Option<&ItemQuery>,
+                )>,
+            )
+            .add_event::<Purchase>()
             .add_event::<Sell>()
             .add_event::<GetSellerItems>()
             .add_event::<PurchaseResponse>()
@@ -42,17 +53,6 @@ impl Plugin for MarketplacePlugin {
 async fn main() {
     App::new()
         .set_runner(runner)
-        .add_plugins(EntityRelationMapperPlugin)
-        .add_systems(
-            PostUpdate,
-            flush_component_to_db::<(
-                Option<&UserQuery>,
-                Option<&PurchaseItemQuery>,
-                Option<&BuyerQuery>,
-                Option<&SellerQuery>,
-                Option<&ItemQuery>,
-            )>,
-        )
         .add_plugins(MarketplacePlugin)
         .run();
 }
