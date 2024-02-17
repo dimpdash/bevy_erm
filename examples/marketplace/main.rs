@@ -272,9 +272,9 @@ fn flush_purchase(
     }
 }
 
-#[derive(Resource,)]
-pub struct WebServer{
-    requests_to_send: u32
+#[derive(Resource)]
+pub struct WebServer {
+    requests_to_send: u32,
 }
 
 impl WebServer {
@@ -282,22 +282,22 @@ impl WebServer {
         self.requests_to_send == 0
     }
 
-    pub fn respond_purchase_event(&mut self, purchase_response: &PurchaseResponse) {
+    pub fn respond_purchase_event(&mut self, _purchase_response: &PurchaseResponse) {
         println!("Responding to purchase event");
         self.requests_to_send -= 1;
     }
 }
 
-
 impl Default for WebServer {
     fn default() -> Self {
         let requests_to_send = 9;
 
-        println!("Creating WebServer with {} requests to send", requests_to_send);
+        println!(
+            "Creating WebServer with {} requests to send",
+            requests_to_send
+        );
 
-        WebServer {
-            requests_to_send,
-        }
+        WebServer { requests_to_send }
     }
 }
 
@@ -305,8 +305,8 @@ fn poll_webserver_for_requests(
     mut purchase_events: EventWriter<Purchase>,
     _get_seller_items: EventWriter<GetSellerItems>,
     db: Res<AnyDatabaseResource>,
-    mut webserver: ResMut<WebServer>,
-    mut exit: EventReader<AppExit>
+    webserver: ResMut<WebServer>,
+    exit: EventReader<AppExit>,
 ) {
     if !exit.is_empty() {
         return;

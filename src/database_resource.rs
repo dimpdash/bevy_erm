@@ -46,14 +46,14 @@ pub struct AnyDatabaseResource {
 
 impl Default for AnyDatabaseResource {
     fn default() -> Self {
-
-
-        let pool = RwLock::new(block_on(
-            sqlx::pool::PoolOptions::new()
-                .min_connections(3)
-                .connect("sqlite::memory:"))
-                .unwrap()
-            );
+        let pool = RwLock::new(
+            block_on(
+                sqlx::pool::PoolOptions::new()
+                    .min_connections(3)
+                    .connect("sqlite::memory:"),
+            )
+            .unwrap(),
+        );
         let tr = RwLock::new(Arena::new());
         let db = Arc::new(DatabaseHandle {
             pool,
