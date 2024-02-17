@@ -1,7 +1,5 @@
 Issues
 
- - can only handle one transaction at a time 
- 
 Limitations
 
 - single threaded

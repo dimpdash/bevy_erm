@@ -77,11 +77,11 @@ fn purchase_system(
             .create(purchased_item, purchase.request)
             .unwrap();
 
-        println!("Sending purchase response");
         response.send(PurchaseResponse {
             request: purchase.request,
         });
     }
+    println!("Finished processing purchase events");
 }
 
 #[allow(dead_code)]
@@ -92,6 +92,7 @@ fn print_tables(mut print_tables: EventWriter<PrintTable>, db: Res<AnyDatabaseRe
 }
 
 fn create_tables(db: Res<AnyDatabaseResource>, _print_tables: EventWriter<PrintTable>) {
+    println!("Creating tables");
     let request = db.start_new_transaction();
     block_on(async {
         // let db_handle = db.get_connection();
@@ -261,48 +262,93 @@ const MARKET_ITEM_ID: i64 = 3;
 fn flush_purchase(
     mut purchase_events: EventReader<PurchaseResponse>,
     mut flush: EventWriter<FlushEvent>,
+    mut webserver: ResMut<WebServer>,
 ) {
     for purchase_event in purchase_events.read() {
+        webserver.respond_purchase_event(purchase_event);
         flush.send(FlushEvent {
             request: purchase_event.request,
         });
     }
 }
 
-fn preload_events(
+#[derive(Resource,)]
+pub struct WebServer{
+    requests_to_send: u32
+}
+
+impl WebServer {
+    pub fn should_exit(&self) -> bool {
+        self.requests_to_send == 0
+    }
+
+    pub fn respond_purchase_event(&mut self, purchase_response: &PurchaseResponse) {
+        println!("Responding to purchase event");
+        self.requests_to_send -= 1;
+    }
+}
+
+
+impl Default for WebServer {
+    fn default() -> Self {
+        let requests_to_send = 9;
+
+        println!("Creating WebServer with {} requests to send", requests_to_send);
+
+        WebServer {
+            requests_to_send,
+        }
+    }
+}
+
+fn poll_webserver_for_requests(
     mut purchase_events: EventWriter<Purchase>,
     _get_seller_items: EventWriter<GetSellerItems>,
     db: Res<AnyDatabaseResource>,
+    mut webserver: ResMut<WebServer>,
+    mut exit: EventReader<AppExit>
 ) {
-    println!("Preloading events:");
+    if !exit.is_empty() {
+        return;
+    }
 
     // create two purchase events
+    println!("====================================");
+    println!("Polling webserver for requests");
+    while webserver.requests_to_send > 0 {
+        if let Some(request) = db.try_start_new_transaction() {
+            let purchase_event = Purchase {
+                purchaser: DatabaseEntityId(PURCHASER_ID),
+                item: DatabaseEntityId(MARKET_ITEM_ID),
+                request,
+            };
 
-    for _ in 0..2 {
-        let purchase_event = Purchase {
-            purchaser: DatabaseEntityId(PURCHASER_ID),
-            item: DatabaseEntityId(MARKET_ITEM_ID),
-            request: db.start_new_transaction(),
-        };
-
-        println!(
-            "\tPreloading purchase event:\n\t\tbuyer {}, item {}, request {}",
-            purchase_event.purchaser, purchase_event.item, purchase_event.request
-        );
-        purchase_events.send(purchase_event);
+            println!(
+                "\tHandling purchase event:\n\t\tbuyer {}, item {}, request {}",
+                purchase_event.purchaser, purchase_event.item, purchase_event.request
+            );
+            purchase_events.send(purchase_event);
+        } else {
+            break;
+        }
     }
     println!();
 }
 
 fn should_exit(
-    purchase_response_events: EventReader<PurchaseResponse>,
     mut exit: EventWriter<AppExit>,
     mut print_tables: EventWriter<PrintTable>,
     db: Res<AnyDatabaseResource>,
+    webserver: Res<WebServer>,
 ) {
-    if purchase_response_events.len() == 2 {
+    if webserver.should_exit() {
+        println!();
+        println!("============ Exiting ==============");
         exit.send(AppExit);
         let request = db.start_new_transaction();
+
+        println!("Tables after handling requests");
+        println!();
         print_tables.send(PrintTable { request });
     }
 }
@@ -331,8 +377,9 @@ impl Plugin for MarketplacePlugin {
             .add_event::<GetSellerItems>()
             .add_event::<PurchaseResponse>()
             .add_event::<PrintTable>()
+            .init_resource::<WebServer>()
             .add_systems(Startup, create_tables)
-            .add_systems(PostStartup, preload_events)
+            .add_systems(PreUpdate, poll_webserver_for_requests)
             .add_systems(PreUpdate, should_exit)
             .add_systems(Update, purchase_system)
             .add_systems(Update, flush_purchase.after(purchase_system))

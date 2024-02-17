@@ -20,7 +20,6 @@ pub trait ReturnSelector<'w> {
     ) -> Vec<Self::ReturnItem>;
 }
 
-
 pub type DatabaseConnection<'a, D> = <D as DatabaseResource>::DatabaseConnection<'a>;
 
 // The items to be returned as readonly or mutable

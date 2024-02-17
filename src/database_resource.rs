@@ -24,6 +24,8 @@ pub trait DatabaseResource: Resource + Default {
     // A way to get a unique key for the database
     fn get_key(&self) -> DatabaseEntityId;
     fn start_new_transaction(&self) -> RequestId;
+    fn try_start_new_transaction(&self) -> Option<RequestId>;
+
     fn commit_transaction(&self, request: RequestId);
 }
 
@@ -44,7 +46,14 @@ pub struct AnyDatabaseResource {
 
 impl Default for AnyDatabaseResource {
     fn default() -> Self {
-        let pool = RwLock::new(block_on(sqlx::SqlitePool::connect("sqlite::memory:")).unwrap());
+
+
+        let pool = RwLock::new(block_on(
+            sqlx::pool::PoolOptions::new()
+                .min_connections(3)
+                .connect("sqlite::memory:"))
+                .unwrap()
+            );
         let tr = RwLock::new(Arena::new());
         let db = Arc::new(DatabaseHandle {
             pool,
@@ -88,10 +97,16 @@ impl DatabaseResource for AnyDatabaseResource {
 
     fn start_new_transaction(&self) -> RequestId {
         let mut transactions = self.db.tr.write().unwrap();
-        let request = transactions.insert(RwLock::new(Some(
-            block_on(self.db.pool.write().unwrap().begin()).unwrap(),
-        )));
+        let transaction = block_on(self.db.pool.write().unwrap().begin()).unwrap();
+        let request = transactions.insert(RwLock::new(Some(transaction)));
         RequestId(request)
+    }
+
+    fn try_start_new_transaction(&self) -> Option<RequestId> {
+        let mut transactions = self.db.tr.write().unwrap();
+        let transaction = block_on(self.db.pool.write().unwrap().try_begin()).unwrap()?;
+        let request = transactions.insert(RwLock::new(Some(transaction)));
+        Some(RequestId(request))
     }
 
     fn commit_transaction(&self, request: RequestId) {
