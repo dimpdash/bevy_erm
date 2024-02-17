@@ -67,18 +67,20 @@ pub fn create_tables(db: Res<AnyDatabaseResource>, _print_tables: EventWriter<Pr
         // let db_handle = db.get_connection();
         // let pool = db_handle.pool.write().unwrap();
         // let mut conn = pool.acquire().await.unwrap();
-        get_transaction!(conn, request, db);
+        let arc = db.get_transaction(request);
+        let mut a = arc.write().unwrap();
+        let tr = a.as_mut().unwrap();
 
         // create the tables
         // market items table
         sqlx::query("CREATE TABLE items (id INTEGER PRIMARY KEY, seller_id INTEGER, name TEXT, price INTEGER)")
-            .execute(&mut **conn).await.unwrap();
+            .execute(&mut **tr).await.unwrap();
 
         // purchased items table
         sqlx::query(
             "CREATE TABLE purchased_items (id INTEGER PRIMARY KEY, item INTEGER, buyer INTEGER)",
         )
-        .execute(&mut **conn)
+        .execute(&mut **tr)
         .await
         .unwrap();
 
@@ -86,7 +88,7 @@ pub fn create_tables(db: Res<AnyDatabaseResource>, _print_tables: EventWriter<Pr
         sqlx::query(
             "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, buyer BOOLEAN, seller BOOLEAN)",
         )
-        .execute(&mut **conn)
+        .execute(&mut **tr)
         .await
         .unwrap();
 
@@ -95,14 +97,14 @@ pub fn create_tables(db: Res<AnyDatabaseResource>, _print_tables: EventWriter<Pr
             "INSERT INTO users (id, name, buyer, seller) VALUES (?, 'Bob The Buyer', 1, 0)",
         )
         .bind(PURCHASER_ID)
-        .execute(&mut **conn)
+        .execute(&mut **tr)
         .await
         .unwrap();
         sqlx::query(
             "INSERT INTO users (id, name, buyer, seller) VALUES (?, 'Alice The Seller', 0, 1)",
         )
         .bind(SELLER_ID)
-        .execute(&mut **conn)
+        .execute(&mut **tr)
         .await
         .unwrap();
 
@@ -110,7 +112,7 @@ pub fn create_tables(db: Res<AnyDatabaseResource>, _print_tables: EventWriter<Pr
         sqlx::query("INSERT INTO items (id, seller_id, name, price) VALUES (?, ?, 'corn', 100)")
             .bind(MARKET_ITEM_ID)
             .bind(SELLER_ID)
-            .execute(&mut **conn)
+            .execute(&mut **tr)
             .await
             .unwrap();
     });

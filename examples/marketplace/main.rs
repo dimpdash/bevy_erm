@@ -30,7 +30,7 @@ impl Plugin for MarketplacePlugin {
                     Option<&BuyerQuery>,
                     Option<&SellerQuery>,
                     Option<&ItemQuery>,
-                )>,
+                ), AnyDatabaseResource>,
             )
             .add_event::<Purchase>()
             .add_event::<Sell>()

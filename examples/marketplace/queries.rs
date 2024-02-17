@@ -1,3 +1,5 @@
+use std::borrow::BorrowMut;
+
 use async_trait::async_trait;
 use bevy_erm::*;
 
@@ -40,10 +42,9 @@ impl BuyerQuery {
 #[async_trait]
 impl ComponentMapper for BuyerQuery {
     type Component = Buyer;
+    type Executor = <bevy_erm::AnyDatabaseResource as bevy_erm::DatabaseResource>::Executor;
 
-    async fn get<'c, E>(conn: E, db_entity: &DatabaseEntityId) -> Result<Self::Component, ()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+    async fn get<'c>(conn: &mut Self::Executor, db_entity: &DatabaseEntityId) -> Result<Self::Component, ()>
     {
         let buyer_bool = sqlx::query("SELECT buyer FROM users WHERE id = ?")
             .bind(db_entity)
@@ -55,24 +56,20 @@ impl ComponentMapper for BuyerQuery {
         }
     }
 
-    async fn update_component<'c, E>(
-        _tr: E,
+    async fn update_component<'c>(
+        _tr: &mut Self::Executor,
         _db_entity: &DatabaseEntityId,
         _component: &Self::Component,
     ) -> Result<(), ()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         Ok(())
     }
 
-    async fn insert_component<'c, E>(
-        tr: E,
+    async fn insert_component<'c>(
+        tr: &mut Self::Executor,
         db_entity: &DatabaseEntityId,
         _component: &Self::Component,
     ) -> Result<(), ()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         let r = sqlx::query("UPDATE users SET buyer = 1 WHERE id = ?")
             .bind(db_entity)
@@ -137,10 +134,9 @@ impl UserQuery {
 #[async_trait]
 impl ComponentMapper for UserQuery {
     type Component = User;
+    type Executor = <bevy_erm::AnyDatabaseResource as bevy_erm::DatabaseResource>::Executor;
 
-    async fn get<'c, E>(conn: E, db_entity: &DatabaseEntityId) -> Result<Self::Component, ()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+    async fn get<'c>(conn: &mut Self::Executor, db_entity: &DatabaseEntityId) -> Result<Self::Component, ()>
     {
         let user = sqlx::query_as::<_, User>("SELECT name FROM users WHERE id = ?")
             .bind(db_entity)
@@ -150,13 +146,11 @@ impl ComponentMapper for UserQuery {
         Ok(user)
     }
 
-    async fn update_component<'c, E>(
-        tr: E,
+    async fn update_component<'c>(
+        tr: &mut Self::Executor,
         db_entity: &DatabaseEntityId,
         component: &Self::Component,
     ) -> Result<(), ()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         let r = sqlx::query("UPDATE users SET name = ? WHERE id = ?")
             .bind(component.name.clone())
@@ -169,13 +163,11 @@ impl ComponentMapper for UserQuery {
         }
     }
 
-    async fn insert_component<'c, E>(
-        tr: E,
+    async fn insert_component<'c>(
+        tr: &mut Self::Executor,
         db_entity: &DatabaseEntityId,
         component: &Self::Component,
     ) -> Result<(), ()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         let r = sqlx::query("INSERT INTO users (id, name) VALUES (?, ?)")
             .bind(db_entity)
@@ -240,10 +232,9 @@ impl SellerQuery {
 #[async_trait]
 impl ComponentMapper for SellerQuery {
     type Component = Seller;
+    type Executor = <bevy_erm::AnyDatabaseResource as bevy_erm::DatabaseResource>::Executor;
 
-    async fn get<'c, E>(conn: E, db_entity: &DatabaseEntityId) -> Result<Self::Component, ()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+    async fn get<'c>(conn: &mut Self::Executor, db_entity: &DatabaseEntityId) -> Result<Self::Component, ()>
     {
         let seller_bool = sqlx::query("SELECT seller FROM users WHERE id = ?")
             .bind(db_entity)
@@ -255,24 +246,20 @@ impl ComponentMapper for SellerQuery {
         }
     }
 
-    async fn update_component<'c, E>(
-        _tr: E,
+    async fn update_component<'c>(
+        _tr: &mut Self::Executor,
         _db_entity: &DatabaseEntityId,
         _component: &Self::Component,
     ) -> Result<(), ()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         Ok(())
     }
 
-    async fn insert_component<'c, E>(
-        tr: E,
+    async fn insert_component<'c>(
+        tr: &mut Self::Executor,
         db_entity: &DatabaseEntityId,
         _component: &Self::Component,
     ) -> Result<(), ()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         let r = sqlx::query("UPDATE users SET seller = 1 WHERE id = ?")
             .bind(db_entity)
@@ -387,10 +374,9 @@ impl ItemQuery {
 #[async_trait]
 impl ComponentMapper for ItemQuery {
     type Component = MarketItem;
+    type Executor = <bevy_erm::AnyDatabaseResource as bevy_erm::DatabaseResource>::Executor;
 
-    async fn get<'c, E>(conn: E, db_entity: &DatabaseEntityId) -> Result<Self::Component, ()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+    async fn get<'c>(conn: &mut Self::Executor, db_entity: &DatabaseEntityId) -> Result<Self::Component, ()>
     {
         let item = sqlx::query_as::<_, MarketItem>("SELECT * FROM items WHERE id = ?")
             .bind(db_entity)
@@ -400,13 +386,11 @@ impl ComponentMapper for ItemQuery {
         Ok(item)
     }
 
-    async fn update_component<'c, E>(
-        tr: E,
+    async fn update_component<'c>(
+        tr: &mut Self::Executor,
         db_entity: &DatabaseEntityId,
         component: &Self::Component,
     ) -> Result<(), ()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         let r = sqlx::query("UPDATE items SET seller_id = ?, name = ?, price = ? WHERE id = ?")
             .bind(component.seller_id)
@@ -421,13 +405,11 @@ impl ComponentMapper for ItemQuery {
         }
     }
 
-    async fn insert_component<'c, E>(
-        tr: E,
+    async fn insert_component<'c>(
+        tr: &mut Self::Executor,
         db_entity: &DatabaseEntityId,
         component: &Self::Component,
     ) -> Result<(), ()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         let r = sqlx::query("INSERT INTO items (id, seller_id, name, price) VALUES (?, ?, ?, ?)")
             .bind(db_entity)
@@ -497,11 +479,10 @@ impl PurchaseItemQuery {
 
 #[async_trait]
 impl ComponentMapper for PurchaseItemQuery {
+    type Executor = <bevy_erm::AnyDatabaseResource as bevy_erm::DatabaseResource>::Executor;
     type Component = PurchasedItem;
 
-    async fn get<'c, E>(conn: E, db_entity: &DatabaseEntityId) -> Result<Self::Component, ()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
+    async fn get<'c>(conn: &mut Self::Executor, db_entity: &DatabaseEntityId) -> Result<Self::Component, ()>
     {
         let item =
             sqlx::query_as::<_, PurchasedItem>("SELECT item FROM purchased_items WHERE id = ?")
@@ -512,13 +493,11 @@ impl ComponentMapper for PurchaseItemQuery {
         Ok(item)
     }
 
-    async fn update_component<'c, E>(
-        tr: E,
+    async fn update_component<'c>(
+        tr: &mut Self::Executor,
         db_entity: &DatabaseEntityId,
         component: &Self::Component,
     ) -> Result<(), ()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         let r = sqlx::query("UPDATE purchased_items SET item = ?, buyer = ? WHERE id = ?")
             .bind(component.item)
@@ -532,13 +511,11 @@ impl ComponentMapper for PurchaseItemQuery {
         }
     }
 
-    async fn insert_component<'c, E>(
-        tr: E,
+    async fn insert_component<'c>(
+        tr: &mut Self::Executor,
         db_entity: &DatabaseEntityId,
         component: &Self::Component,
     ) -> Result<(), ()>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::Sqlite>,
     {
         let r = sqlx::query("INSERT INTO purchased_items (id, item, buyer) VALUES (?, ?, ?)")
             .bind(db_entity.0)

@@ -1,6 +1,5 @@
 use std::{
-    any::TypeId,
-    sync::{Arc, RwLock},
+    any::TypeId, ops::{Deref, DerefMut}, sync::{Arc, RwLock}
 };
 
 use bevy_ecs::{component::ComponentId, prelude::*};
@@ -8,9 +7,10 @@ use bevy_mod_index::index::Index;
 
 use futures::executor::block_on;
 use generational_arena::Arena;
-use sqlx::Transaction;
+use sqlx::{Executor, Transaction};
 
-use crate::*;
+use crate::database_query::*;
+use crate::database_entity::*;
 
 // Initially was going to have this trait to allow for implementing for different sql databases
 // but the type system became too complex (for me)
@@ -18,13 +18,14 @@ use crate::*;
 // Left the indirection in case I want to change it later
 
 pub trait DatabaseResource: Resource + Default {
-    type DatabaseConnection<'a>;
+    type Executor; 
+    type Transaction: Deref<Target = Self::Executor> + DerefMut;
 
-    fn get_connection(&self) -> Arc<DatabaseHandle>;
     // A way to get a unique key for the database
     fn get_key(&self) -> DatabaseEntityId;
     fn start_new_transaction(&self) -> RequestId;
     fn try_start_new_transaction(&self) -> Option<RequestId>;
+    fn get_transaction(&self, request: RequestId) -> Arc<RwLock<Option<Self::Transaction>>>; 
 
     fn commit_transaction(&self, request: RequestId);
 }
@@ -35,13 +36,13 @@ pub struct DatabaseHandle {
 
     // Require the option so that we can remove the transaction from the read write lock
     // when committing
-    pub tr: RwLock<Arena<RwLock<Option<Transaction<'static, sqlx::Sqlite>>>>>,
+    pub tr: RwLock<Arena<Arc<RwLock<Option<Transaction<'static, sqlx::Sqlite>>>>>>,
     min_key: RwLock<i64>,
 }
 
 #[derive(Resource, Debug)]
 pub struct AnyDatabaseResource {
-    db: Arc<DatabaseHandle>,
+    db: DatabaseHandle,
 }
 
 impl Default for AnyDatabaseResource {
@@ -55,11 +56,11 @@ impl Default for AnyDatabaseResource {
             .unwrap(),
         );
         let tr = RwLock::new(Arena::new());
-        let db = Arc::new(DatabaseHandle {
+        let db = DatabaseHandle {
             pool,
             tr,
             min_key: RwLock::new(0),
-        });
+        };
         AnyDatabaseResource { db }
     }
 }
@@ -69,23 +70,7 @@ unsafe impl Send for DatabaseHandle {}
 
 unsafe impl Sync for AnyDatabaseResource {}
 
-#[macro_export]
-macro_rules! get_transaction {
-    ($name:ident, $request:expr, $db:expr) => {
-        let database_handle = $db.get_connection();
-        let arena = database_handle.tr.read().unwrap();
-        let mut tr_lock = arena.get($request.0).unwrap().write().unwrap();
-        let $name = tr_lock.as_mut().unwrap();
-    };
-}
-
 impl DatabaseResource for AnyDatabaseResource {
-    type DatabaseConnection<'a> = &'a mut sqlx::SqliteConnection;
-
-    fn get_connection(&self) -> Arc<DatabaseHandle> {
-        self.db.clone()
-    }
-
     // Rather than actually querying the database for key just hold on to the last key we had to issue
     // This is a bit of a hack but it's fine for now. As POC and only considering one machine
     // It is progressing into the negatives so that instantiating any objects with positive keys will not conflict
@@ -98,24 +83,33 @@ impl DatabaseResource for AnyDatabaseResource {
     fn start_new_transaction(&self) -> RequestId {
         let mut transactions = self.db.tr.write().unwrap();
         let transaction = block_on(self.db.pool.write().unwrap().begin()).unwrap();
-        let request = transactions.insert(RwLock::new(Some(transaction)));
+        let request = transactions.insert(Arc::new(RwLock::new(Some(transaction))));
         RequestId(request)
     }
 
     fn try_start_new_transaction(&self) -> Option<RequestId> {
         let mut transactions = self.db.tr.write().unwrap();
         let transaction = block_on(self.db.pool.write().unwrap().try_begin()).unwrap()?;
-        let request = transactions.insert(RwLock::new(Some(transaction)));
+        let request = transactions.insert(Arc::new(RwLock::new(Some(transaction))));
         Some(RequestId(request))
     }
 
     fn commit_transaction(&self, request: RequestId) {
-        let database_handle = self.get_connection();
+        let database_handle = &self.db;
         let mut arena = database_handle.tr.write().unwrap();
         let tr_lock = arena.remove(request.0).unwrap();
         let mut tr_lock_guard = tr_lock.write().unwrap();
         let tr = tr_lock_guard.take().unwrap();
         block_on(tr.commit()).unwrap();
+    }
+
+    type Executor = sqlx::SqliteConnection;
+    type Transaction = Transaction<'static, sqlx::Sqlite>;
+
+    fn get_transaction(&self, request: RequestId) -> Arc<RwLock<Option<Self::Transaction>>> {
+        let database_handle = &self.db;
+        let arena = database_handle.tr.read().unwrap();
+        arena.get(request.0).unwrap().clone()
     }
 }
 
@@ -130,42 +124,10 @@ pub trait ComponentMapperMapper {
     ) -> Result<(), ()>;
 }
 
-// #[macro_export]
-// macro_rules! impl_flush_component_to_db {
-//     ($($name:ident)+) => {
-//         use bevy_mod_index::index::Index;
-//         use bevy_ecs::prelude::*;
-
-//         pub fn flush_component_to_db(
-//             flush_events: EventReader<FlushEvent>,
-//             index: Index<RequestIdIndex>,
-//             query: Query<(&DatabaseEntity, $(Option<&<$name as ComponentMapper>::Component>,)+)>,
-//             db_query: DatabaseQuery<($(&$name, )+)>
-//         ) {
-//             for flush_event in flush_events.read() {
-//                 for entity in index.lookup(&flush_event.request) {
-//                     let (db_entity, $(lower!($name), )+) = query.get(entity).unwrap();
-
-//                     $(
-//                         if let Some(comp) = lower!($name) {
-//                             db_query
-//                                 .update_or_insert_component(db_entity, comp)
-//                                 .unwrap();
-//                         }
-//                     )+
-//                 }
-
-//                 println!("Committing transaction");
-//                 db.commit_transaction(flush_event.request);
-//             }
-//         }
-//     };
-// }
-
-pub fn flush_component_to_db<'w1, 'w2, 's, DBQ: DBQueryInfo>(
+pub fn flush_component_to_db<'w1, 'w2, 's, DBQ: DBQueryInfo<DbResource>, DbResource: DatabaseResource>(
     mut flush_events: EventReader<FlushEvent>,
     mut index: Index<RequestIdIndex>,
-    db_query: DatabaseQuery<DBQ>,
+    db_query: DatabaseQuery<DBQ, DbResource>,
 ) where
     'w1: 'w2,
     's: 'w2,
