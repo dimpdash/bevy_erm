@@ -4,7 +4,7 @@ use crate::events::*;
 
 #[derive(Resource)]
 pub struct WebServer {
-    requests_to_send: u32,
+    requests_to_send: i32,
 }
 
 impl WebServer {
