@@ -1,11 +1,11 @@
 use std::{
-    any::{type_name, Any, TypeId},
+    any::TypeId,
     sync::{Arc, RwLock},
 };
 
 use bevy_ecs::{component::ComponentId, prelude::*};
 use bevy_mod_index::index::Index;
-use bevy_reflect::DynamicStruct;
+
 use futures::executor::block_on;
 use generational_arena::Arena;
 use sqlx::Transaction;
@@ -104,9 +104,15 @@ impl DatabaseResource for AnyDatabaseResource {
     }
 }
 
-pub trait ComponentMapperMapper 
-{
-    fn update_or_insert_component(db_entity: DatabaseEntity, entity: Entity,component_type_id: TypeId, type_id: ComponentId, request: RequestId, world: &mut World) -> Result<(), ()>;
+pub trait ComponentMapperMapper {
+    fn update_or_insert_component(
+        db_entity: DatabaseEntity,
+        entity: Entity,
+        component_type_id: TypeId,
+        type_id: ComponentId,
+        request: RequestId,
+        world: &mut World,
+    ) -> Result<(), ()>;
 }
 
 // #[macro_export]
@@ -119,12 +125,12 @@ pub trait ComponentMapperMapper
 //             flush_events: EventReader<FlushEvent>,
 //             index: Index<RequestIdIndex>,
 //             query: Query<(&DatabaseEntity, $(Option<&<$name as ComponentMapper>::Component>,)+)>,
-//             db_query: DatabaseQuery<($(&$name, )+)>  
+//             db_query: DatabaseQuery<($(&$name, )+)>
 //         ) {
 //             for flush_event in flush_events.read() {
 //                 for entity in index.lookup(&flush_event.request) {
 //                     let (db_entity, $(lower!($name), )+) = query.get(entity).unwrap();
-                    
+
 //                     $(
 //                         if let Some(comp) = lower!($name) {
 //                             db_query
@@ -133,8 +139,7 @@ pub trait ComponentMapperMapper
 //                         }
 //                     )+
 //                 }
-        
-        
+
 //                 println!("Committing transaction");
 //                 db.commit_transaction(flush_event.request);
 //             }
@@ -142,16 +147,14 @@ pub trait ComponentMapperMapper
 //     };
 // }
 
-
-pub fn flush_component_to_db<'w1,'w2,'s, DBQ: DBQueryInfo>(
+pub fn flush_component_to_db<'w1, 'w2, 's, DBQ: DBQueryInfo>(
     mut flush_events: EventReader<FlushEvent>,
     mut index: Index<RequestIdIndex>,
-    db_query: DatabaseQuery<DBQ>,  
-) 
-    where 'w1: 'w2,
-    's: 'w2
+    db_query: DatabaseQuery<DBQ>,
+) where
+    'w1: 'w2,
+    's: 'w2,
 {
-
     for flush_event in flush_events.read() {
         for entity in index.lookup(&flush_event.request) {
             db_query.update_or_insert_component(entity).unwrap();
@@ -159,5 +162,4 @@ pub fn flush_component_to_db<'w1,'w2,'s, DBQ: DBQueryInfo>(
 
         db_query.commit(flush_event.request).unwrap();
     }
-
 }

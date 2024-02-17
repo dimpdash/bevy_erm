@@ -2,20 +2,17 @@ mod components;
 mod queries;
 
 use std::any::TypeId;
-use casey::lower;
 
-use bevy_ecs::{component::{self, ComponentId}, prelude::*, ptr::Ptr, system::SystemParam, world::unsafe_world_cell::UnsafeWorldCell};
+use bevy_ecs::{component::ComponentId, prelude::*};
 use bevy_erm::*;
 #[macro_use]
 extern crate prettytable;
 
 use bevy_app::{prelude::*, AppExit};
-use bevy_utils::petgraph::visit::Data;
+
 use components::*;
 use futures::executor::block_on;
 use queries::*;
-use sqlx::{Any, Database};
-
 
 #[derive(Event, Debug)]
 pub struct Purchase {
@@ -94,7 +91,7 @@ fn print_tables(mut print_tables: EventWriter<PrintTable>, db: Res<AnyDatabaseRe
     print_tables.send(PrintTable { request });
 }
 
-fn create_tables(db: Res<AnyDatabaseResource>, mut print_tables: EventWriter<PrintTable>) {
+fn create_tables(db: Res<AnyDatabaseResource>, _print_tables: EventWriter<PrintTable>) {
     let request = db.start_new_transaction();
     block_on(async {
         // let db_handle = db.get_connection();
@@ -345,7 +342,6 @@ impl Plugin for MarketplacePlugin {
     }
 }
 
-
 // macro_rules! make_component_mapper_mapper {
 //     ($mappper_name:ident, $($name:ident)+) => {
 //         pub struct $mappper_name;
@@ -376,7 +372,6 @@ impl Plugin for MarketplacePlugin {
 //     };
 // }
 
-
 // make_component_mapper_mapper!(MarketplaceComponentMapperMapper, ItemQuery);
 
 pub struct MarketplaceComponentMapperMapper;
@@ -390,13 +385,24 @@ impl ComponentMapperMapper for MarketplaceComponentMapperMapper {
         world: &mut World,
     ) -> Result<(), ()> {
         let unsafe_world = world.as_unsafe_world_cell();
-        let db = unsafe {unsafe_world.world().get_resource::<AnyDatabaseResource>().unwrap()};
-        get_transaction!(tr, request, db);
+        let db = unsafe {
+            unsafe_world
+                .world()
+                .get_resource::<AnyDatabaseResource>()
+                .unwrap()
+        };
+        get_transaction!(_tr, request, db);
 
         if false {
             unreachable!();
         } else if component_type_id == TypeId::of::<MarketItem>() {
-            let component: &MarketItem  = unsafe { unsafe_world.world().get_by_id(entity, component_id).unwrap().deref() };
+            let component: &MarketItem = unsafe {
+                unsafe_world
+                    .world()
+                    .get_by_id(entity, component_id)
+                    .unwrap()
+                    .deref()
+            };
 
             println!("Updating or inserting MarketItem");
             SingleComponentRetriever::<ItemQuery, AnyDatabaseResource>::update_or_insert_component(
@@ -406,7 +412,13 @@ impl ComponentMapperMapper for MarketplaceComponentMapperMapper {
                 component,
             )?;
         } else if component_type_id == TypeId::of::<PurchasedItem>() {
-            let component: &PurchasedItem = unsafe { unsafe_world.world().get_by_id(entity, component_id).unwrap().deref() };
+            let component: &PurchasedItem = unsafe {
+                unsafe_world
+                    .world()
+                    .get_by_id(entity, component_id)
+                    .unwrap()
+                    .deref()
+            };
 
             println!("Updating or inserting PurchasedItem");
             SingleComponentRetriever::<PurchaseItemQuery, AnyDatabaseResource>::update_or_insert_component(
@@ -416,7 +428,13 @@ impl ComponentMapperMapper for MarketplaceComponentMapperMapper {
                 component,
             )?;
         } else if component_type_id == TypeId::of::<User>() {
-            let component: &User = unsafe { unsafe_world.world().get_by_id(entity, component_id).unwrap().deref() };
+            let component: &User = unsafe {
+                unsafe_world
+                    .world()
+                    .get_by_id(entity, component_id)
+                    .unwrap()
+                    .deref()
+            };
 
             println!("Updating or inserting User");
             SingleComponentRetriever::<UserQuery, AnyDatabaseResource>::update_or_insert_component(
@@ -426,7 +444,13 @@ impl ComponentMapperMapper for MarketplaceComponentMapperMapper {
                 component,
             )?;
         } else if component_type_id == TypeId::of::<Buyer>() {
-            let component: &Buyer = unsafe { unsafe_world.world().get_by_id(entity, component_id).unwrap().deref() };
+            let component: &Buyer = unsafe {
+                unsafe_world
+                    .world()
+                    .get_by_id(entity, component_id)
+                    .unwrap()
+                    .deref()
+            };
 
             println!("Updating or inserting Buyer");
             SingleComponentRetriever::<BuyerQuery, AnyDatabaseResource>::update_or_insert_component(
@@ -436,7 +460,13 @@ impl ComponentMapperMapper for MarketplaceComponentMapperMapper {
                 component,
             )?;
         } else if component_type_id == TypeId::of::<Seller>() {
-            let component: &Seller = unsafe { unsafe_world.world().get_by_id(entity, component_id).unwrap().deref() };
+            let component: &Seller = unsafe {
+                unsafe_world
+                    .world()
+                    .get_by_id(entity, component_id)
+                    .unwrap()
+                    .deref()
+            };
 
             println!("Updating or inserting Seller");
             SingleComponentRetriever::<SellerQuery, AnyDatabaseResource>::update_or_insert_component(
@@ -459,7 +489,16 @@ async fn main() {
     App::new()
         .set_runner(runner)
         .add_plugins(EntityRelationMapperPlugin)
-        .add_systems(PostUpdate, flush_component_to_db::<(Option<&UserQuery>, Option<&PurchaseItemQuery>, Option<&BuyerQuery>, Option<&SellerQuery>, Option<&ItemQuery>)>)
+        .add_systems(
+            PostUpdate,
+            flush_component_to_db::<(
+                Option<&UserQuery>,
+                Option<&PurchaseItemQuery>,
+                Option<&BuyerQuery>,
+                Option<&SellerQuery>,
+                Option<&ItemQuery>,
+            )>,
+        )
         .add_plugins(MarketplacePlugin)
         .run();
 }

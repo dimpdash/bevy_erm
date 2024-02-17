@@ -1,7 +1,7 @@
 use crate::*;
 use async_trait::async_trait;
-use bevy_ecs::entity;
-use bevy_ecs::query::WorldQuery;
+
+use bevy_ecs::query::{QueryItem, ROQueryItem, WorldQuery};
 use bevy_ecs::{
     component::Component, prelude::*, system::SystemParam,
     world::unsafe_world_cell::UnsafeWorldCell,
@@ -10,9 +10,6 @@ use bevy_mod_index::prelude::*;
 use bevy_utils::hashbrown::HashSet;
 use casey::lower;
 use futures::executor::block_on;
-
-type QueryItem<'a, Q> = Item<'a, Q>;
-type ROQueryItem<'a, Q> = ReadOnlyItem<'a, Q>;
 
 pub trait ReturnSelector<'w> {
     type ReturnItem;
@@ -23,19 +20,22 @@ pub trait ReturnSelector<'w> {
     ) -> Vec<Self::ReturnItem>;
 }
 
+
 pub type DatabaseConnection<'a, D> = <D as DatabaseResource>::DatabaseConnection<'a>;
 
-pub type ReadOnlyItem<'a, Q> = <<<Q as DBQueryInfo>::WorldQuery<'a> as WorldQuery>::ReadOnly as WorldQuery>::Item<'a>;
-pub type Item<'a, Q> = <<Q as DBQueryInfo>::WorldQuery<'a> as WorldQuery>::Item<'a>;
+// The items to be returned as readonly or mutable
+// Use the World queries underlying specification
+pub type ReadOnlyItem<'a, Q> = ROQueryItem<'a, <Q as DBQueryInfo>::WorldQuery<'a>>;
+pub type Item<'a, Q> = QueryItem<'a, <Q as DBQueryInfo>::WorldQuery<'a>>;
 
 pub trait DBQueryInfo {
-    // the returned item
-    // type ReadOnly: ReadOnlyDBQueryInfo<Database = Self::Database, Mapper = Self::Mapper>;
     type Database: DatabaseResource;
     type Mapper: ComponentMapper;
+    // Using the world query to specify the type of the item
+    // Allows for being able to use a bevy query from the DBQueryInfo
+    // Used when inserting or updating components for the Database Query
     type WorldQuery<'a>: WorldQuery;
     type DerefItem;
-
 
     fn get<'w, D: DatabaseEntityWithRequest>(
         db: &Self::Database,
@@ -138,10 +138,7 @@ pub trait DatabaseEntityWithRequest {
 }
 
 impl<'w, 's, Q: DBQueryInfo> DatabaseQuery<'w, 's, Q> {
-    pub fn get<D: DatabaseEntityWithRequest>(
-        &self,
-        db_entity: &D,
-    ) -> Result<ReadOnlyItem<Q>, ()> {
+    pub fn get<D: DatabaseEntityWithRequest>(&self, db_entity: &D) -> Result<ReadOnlyItem<Q>, ()> {
         Q::get(&self.db, self.world, db_entity)
     }
 
@@ -179,13 +176,12 @@ impl<'w, 's, Q: DBQueryInfo> DatabaseQuery<'w, 's, Q> {
         Q::create(&self.db, self.world, component, request)
     }
 
-    pub fn update_or_insert_component(
-        &self,
-        entity: Entity,
-    ) -> Result<(), ()> {
-
+    pub fn update_or_insert_component(&self, entity: Entity) -> Result<(), ()> {
         unsafe {
-            let mut q = self.world.world_mut().query::<(&DatabaseEntity, Q::WorldQuery<'w>)>();
+            let mut q = self
+                .world
+                .world_mut()
+                .query::<(&DatabaseEntity, Q::WorldQuery<'w>)>();
             let (db_entity, comp) = q.get(self.world.world(), entity).unwrap();
 
             if db_entity.persisted.into() {
@@ -292,8 +288,7 @@ pub trait TupleMarker: DBQueryInfo {}
 
 impl<T: DBQueryInfo> TupleMarker for Option<T> {}
 
-impl<T: DBQueryInfo> DBQueryInfo for Option<T> 
-{
+impl<T: DBQueryInfo> DBQueryInfo for Option<T> {
     type DerefItem = Option<<T as DBQueryInfo>::DerefItem>;
 
     type Database = <T as DBQueryInfo>::Database;
@@ -521,8 +516,6 @@ where
     }
 }
 
-
-
 /*
  Like above but for tuples of DBQueryInfo
  The macro takes a tuple of DBQueryInfo and creates
@@ -607,10 +600,10 @@ macro_rules! simple_composition_of_db_queries {
 // Allows DBQueryInfo to be composed of other DBQueryInfo
 // eg. DBQuery<(User, Item)>
 // simple_composition_of_db_queries!{}
-simple_composition_of_db_queries!{A}
-simple_composition_of_db_queries!{A B}
-simple_composition_of_db_queries!{A B C}
-simple_composition_of_db_queries!{A B C D}
+simple_composition_of_db_queries! {A}
+simple_composition_of_db_queries! {A B}
+simple_composition_of_db_queries! {A B C}
+simple_composition_of_db_queries! {A B C D}
 // simple_composition_of_db_queries!{A B C D E}
 // simple_composition_of_db_queries!{A B C D E F}
 // simple_composition_of_db_queries!{A B C D E F G}
@@ -725,9 +718,9 @@ where
         Ok(entities)
     }
 
-    pub fn update_or_insert_component<'w>(
+    pub fn update_or_insert_component(
         db: &AnyDatabaseResource,
-        world: UnsafeWorldCell<'w>,
+        world: UnsafeWorldCell<'_>,
         db_entity: &DatabaseEntity,
         component: &MyMapper::Component,
     ) -> Result<(), ()> {
@@ -741,7 +734,6 @@ where
             Self::insert_component(db, world, db_entity, component)
         }
     }
-
 }
 
 impl<'w, C: WorldQuery> ReturnSelector<'w> for C {
