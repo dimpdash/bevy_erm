@@ -1,17 +1,13 @@
-
 use bevy_ecs::prelude::*;
 use bevy_erm::*;
-
 
 use bevy_app::{prelude::*, AppExit};
 
 use crate::components::*;
-use futures::executor::block_on;
-use crate::queries::*;
 use crate::events::*;
+use crate::queries::*;
 use crate::resources::*;
-
-
+use futures::executor::block_on;
 
 pub fn purchase_system(
     mut purchases: EventReader<Purchase>,
@@ -123,8 +119,6 @@ pub fn create_tables(db: Res<AnyDatabaseResource>, _print_tables: EventWriter<Pr
     // let request = db.start_new_transaction();
     // print_tables.send(PrintTable { request });
 }
-
-
 
 pub fn print_items_table(
     items: DatabaseQuery<&ItemQuery>,
@@ -242,7 +236,6 @@ pub fn flush_purchase(
     }
 }
 
-
 pub fn poll_webserver_for_requests(
     mut purchase_events: EventWriter<Purchase>,
     _get_seller_items: EventWriter<GetSellerItems>,
@@ -257,7 +250,7 @@ pub fn poll_webserver_for_requests(
     // create two purchase events
     println!("====================================");
     println!("Polling webserver for requests");
-    while webserver.is_messages_to_send(){
+    while webserver.is_messages_to_send() {
         if let Some(request) = db.try_start_new_transaction() {
             let purchase_event = Purchase {
                 purchaser: DatabaseEntityId(PURCHASER_ID),

@@ -1,25 +1,21 @@
 mod components;
-mod queries;
 mod events;
-mod systems;
+mod queries;
 mod resources;
-
+mod systems;
 
 #[macro_use]
 extern crate prettytable;
 
-use std::any::TypeId;
-
-use bevy_ecs::{component::ComponentId, prelude::*};
+use bevy_ecs::prelude::*;
 use bevy_erm::*;
 
-use bevy_app::{prelude::*, AppExit};
+use bevy_app::prelude::*;
 
-use queries::*;
 use events::*;
-use systems::*;
+use queries::*;
 use resources::*;
-
+use systems::*;
 
 pub struct MarketplacePlugin;
 
