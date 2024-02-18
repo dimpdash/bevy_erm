@@ -10,10 +10,10 @@ keywords = [
     "orm",
 ]
 repository = "https://github.com/dimpdash/bevy_erm"
+license = "Apache-2.0"
 
 [[examples]]
 name = "marketplace"
-license = "Apache-2.0"
 
 
 [dependencies]
