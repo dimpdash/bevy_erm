@@ -7,10 +7,13 @@ readme = "README.md"
 keywords = [
     "ecs",
     "bevy",
+    "orm",
 ]
+repository = "https://github.com/dimpdash/bevy_erm"
 
 [[examples]]
 name = "marketplace"
+license = "MIT OR Apache-2.0"
 
 
 [dependencies]
