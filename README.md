@@ -76,8 +76,7 @@ Individual user requests are passed into the ECS as events. The systems can use 
          └──────────────┘           │                                      │
                                     └──────────────────────────────────────┘
 
-
-
-
-
 ```
+
+# Examples
+Found in ./examples
