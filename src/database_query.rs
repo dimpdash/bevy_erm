@@ -20,43 +20,46 @@ pub trait ReturnSelector<'w> {
     ) -> Vec<Self::ReturnItem>;
 }
 
-pub type DatabaseTransaction<'a, 'b, D> = &'a mut <D as DatabaseResource>::Executor;
+pub type DatabaseTransaction<'a, 'b, D> = &'a mut <D as DatabaseResource>::Transaction;
 
 // The items to be returned as readonly or mutable
 // Use the World queries underlying specification
 pub type ReadOnlyItem<'a, Q, DbResource> =
     ROQueryItem<'a, <Q as DBQueryInfo<DbResource>>::WorldQuery<'a>>;
 pub type Item<'a, Q, DbResource> = QueryItem<'a, <Q as DBQueryInfo<DbResource>>::WorldQuery<'a>>;
-
+#[async_trait]
 pub trait DBQueryInfo<DbResource: DatabaseResource> {
-    // type Mapper: ComponentMapper<Executor = DbResource::Transaction>;
+    // type Mapper: ComponentMapper<Transaction = DbResource::Transaction>;
     // Using the world query to specify the type of the item
     // Allows for being able to use a bevy query from the DBQueryInfo
     // Used when inserting or updating components for the Database Query
     type WorldQuery<'a>: WorldQuery;
-    type DerefItem;
+    type DerefItem: Send;
+    type ReadOnlyItem<'a>: Send;
+    type Item<'a>: Send;
 
-    fn get<'w, D: DatabaseEntityWithRequest>(
+    async fn get<'w, D: DatabaseEntityWithRequest>(
         db: &DbResource,
         world: UnsafeWorldCell<'w>,
         db_entity: &D,
-    ) -> Result<ReadOnlyItem<'w, Self, DbResource>, ()>;
-    fn get_mut<'w, D: DatabaseEntityWithRequest>(
+    ) -> Result<Self::ReadOnlyItem<'w>, ()>;
+    async fn get_mut<'w, D: DatabaseEntityWithRequest>(
         db: &DbResource,
         world: UnsafeWorldCell<'w>,
         db_entity: &D,
-    ) -> Result<Item<'w, Self, DbResource>, ()>;
-    fn update_component<'w>(
+    ) -> Result<Self::Item<'w>, ()>;
+    async fn update_component<'w>(
         db: &DbResource,
         world: UnsafeWorldCell<'w>,
         db_entity: &DatabaseEntity,
-        component: ReadOnlyItem<'w, Self, DbResource>,
-    ) -> Result<(), ()>;
-    fn insert_component<'w>(
+        component: Self::ReadOnlyItem<'w>,
+    ) -> Result<(), ()>
+    ;
+    async fn insert_component<'w>(
         db: &DbResource,
         world: UnsafeWorldCell<'w>,
         db_entity: &DatabaseEntity,
-        component: ReadOnlyItem<'w, Self, DbResource>,
+        component: Self::ReadOnlyItem<'w>,
     ) -> Result<(), ()>;
     fn load_components<'w, R: ReturnSelector<'w>>(
         db: &DbResource,
@@ -65,8 +68,9 @@ pub trait DBQueryInfo<DbResource: DatabaseResource> {
         get_comp_from_db: impl FnOnce(
             DatabaseTransaction<DbResource>,
         ) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>,
-    ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()>;
-    fn create(
+    ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()>
+    ;
+    async fn create(
         db: &DbResource,
         world: UnsafeWorldCell<'_>,
         component: Self::DerefItem,
@@ -136,7 +140,7 @@ where
     }
 }
 
-pub trait DatabaseEntityWithRequest {
+pub trait DatabaseEntityWithRequest: Sync + Send{
     fn request(&self) -> &RequestId;
     fn id(&self) -> &DatabaseEntityId;
 }
@@ -147,31 +151,31 @@ impl<'w, 's, Q: DBQueryInfo<DbResource>, DbResource: DatabaseResource>
     pub fn get<D: DatabaseEntityWithRequest>(
         &self,
         db_entity: &D,
-    ) -> Result<ReadOnlyItem<Q, DbResource>, ()> {
-        Q::get(self.db.as_ref(), self.world, db_entity)
+    ) -> Result<Q::ReadOnlyItem<'w>, ()> {
+        block_on(Q::get(self.db.as_ref(), self.world, db_entity))
     }
 
     pub fn get_mut<D: DatabaseEntityWithRequest>(
         &self,
         db_entity: &D,
-    ) -> Result<Item<Q, DbResource>, ()> {
-        Q::get_mut(self.db.as_ref(), self.world, db_entity)
+    ) -> Result<Q::Item<'w>, ()> {
+        block_on(Q::get_mut(self.db.as_ref(), self.world, db_entity))
     }
 
     pub fn update_component(
         &self,
         db_entity: &DatabaseEntity,
-        component: ReadOnlyItem<'w, Q, DbResource>,
+        component: Q::ReadOnlyItem<'w>,
     ) -> Result<(), ()> {
-        Q::update_component(self.db.as_ref(), self.world, db_entity, component)
+        block_on(Q::update_component(self.db.as_ref(), self.world, db_entity, component))
     }
 
     pub fn insert_component(
         &self,
         db_entity: &DatabaseEntity,
-        component: ReadOnlyItem<'w, Q, DbResource>,
+        component: Q::ReadOnlyItem<'w>,
     ) -> Result<(), ()> {
-        Q::insert_component(self.db.as_ref(), self.world, db_entity, component)
+        block_on(Q::insert_component(self.db.as_ref(), self.world, db_entity, component))
     }
 
     pub fn load_components<R: ReturnSelector<'w>>(
@@ -184,8 +188,8 @@ impl<'w, 's, Q: DBQueryInfo<DbResource>, DbResource: DatabaseResource>
         Q::load_components::<R>(self.db.as_ref(), self.world, request, get_comp_from_db)
     }
 
-    pub fn create(&self, component: Q::DerefItem, request: RequestId) -> Result<(), ()> {
-        Q::create(self.db.as_ref(), self.world, component, request)
+    pub async fn create(&self, component: Q::DerefItem, request: RequestId) -> Result<(), ()> {
+        block_on(Q::create(self.db.as_ref(), self.world, component, request))
     }
 
     pub fn update_or_insert_component(&self, entity: Entity) -> Result<(), ()> {
@@ -198,13 +202,14 @@ impl<'w, 's, Q: DBQueryInfo<DbResource>, DbResource: DatabaseResource>
 
             if db_entity.persisted.into() {
                 if db_entity.dirty {
-                    Q::update_component(self.db.as_ref(), self.world, db_entity, comp)
+                    block_on(Q::update_component(self.db.as_ref(), self.world, db_entity, comp))
                 } else {
                     Ok(())
                 }
             } else {
-                Q::insert_component(self.db.as_ref(), self.world, db_entity, comp)
+                block_on(Q::insert_component(self.db.as_ref(), self.world, db_entity, comp))
             }
+            todo!()
         }
     }
 
@@ -218,7 +223,7 @@ impl<'w, 's, Q: DBQueryInfo<DbResource>, DbResource: DatabaseResource>
 #[async_trait]
 pub trait ComponentMapper {
     type Component;
-    type Executor;
+    type Executor: Send;
 
     async fn get<'c>(
         e: &mut Self::Executor,
@@ -296,6 +301,7 @@ impl<T: DBQueryInfo<DbResource>, DbResource: DatabaseResource> TupleMarker<DbRes
 {
 }
 
+#[async_trait]
 impl<T: DBQueryInfo<DbResource>, DbResource: DatabaseResource> DBQueryInfo<DbResource>
     for Option<T>
 {
@@ -305,43 +311,47 @@ impl<T: DBQueryInfo<DbResource>, DbResource: DatabaseResource> DBQueryInfo<DbRes
 
     type WorldQuery<'a> = Option<<T as DBQueryInfo<DbResource>>::WorldQuery<'a>>;
 
-    fn get<'w, D: DatabaseEntityWithRequest>(
+    type ReadOnlyItem<'a> = Option<<T as DBQueryInfo<DbResource>>::ReadOnlyItem<'a>>;
+
+    type Item<'a> = Option<<T as DBQueryInfo<DbResource>>::Item<'a>>;
+
+    async fn get<'w, D: DatabaseEntityWithRequest>(
         db: &DbResource,
         world: UnsafeWorldCell<'w>,
         db_entity: &D,
-    ) -> Result<ReadOnlyItem<'w, Self, DbResource>, ()> {
-        T::get(db, world, db_entity).map(Some)
+    ) -> Result<Self::ReadOnlyItem<'w>, ()> {
+        T::get(db, world, db_entity).await.map(Some)
     }
 
-    fn get_mut<'w, D: DatabaseEntityWithRequest>(
+    async fn get_mut<'w, D: DatabaseEntityWithRequest>(
         db: &DbResource,
         world: UnsafeWorldCell<'w>,
         db_entity: &D,
-    ) -> Result<Item<'w, Self, DbResource>, ()> {
-        T::get_mut(db, world, db_entity).map(Some)
+    ) -> Result<Self::Item<'w>, ()> {
+        T::get_mut(db, world, db_entity).await.map(Some)
     }
 
-    fn update_component<'w>(
+    async fn update_component<'w>(
         db: &DbResource,
         world: UnsafeWorldCell<'w>,
         db_entity: &DatabaseEntity,
-        component: ReadOnlyItem<'w, Self, DbResource>,
+        component: Self::ReadOnlyItem<'w>,
     ) -> Result<(), ()> {
         if let Some(component) = component {
-            T::update_component(db, world, db_entity, component)
+            T::update_component(db, world, db_entity, component).await
         } else {
             Ok(())
         }
     }
 
-    fn insert_component<'w>(
+    async fn insert_component<'w>(
         db: &DbResource,
         world: UnsafeWorldCell<'w>,
         db_entity: &DatabaseEntity,
-        component: ReadOnlyItem<'w, Self, DbResource>,
+        component: Self::ReadOnlyItem<'w>,
     ) -> Result<(), ()> {
         if let Some(component) = component {
-            T::insert_component(db, world, db_entity, component)
+            T::insert_component(db, world, db_entity, component).await
         } else {
             Ok(())
         }
@@ -358,35 +368,36 @@ impl<T: DBQueryInfo<DbResource>, DbResource: DatabaseResource> DBQueryInfo<DbRes
         unimplemented!()
     }
 
-    fn create(
+    async fn create(
         db: &DbResource,
         world: UnsafeWorldCell<'_>,
         component: Self::DerefItem,
         request: RequestId,
     ) -> Result<(), ()> {
         if let Some(component) = component {
-            T::create(db, world, component, request)
+            T::create(db, world, component, request).await
         } else {
             Ok(())
         }
     }
 }
 
-impl<'a, T: ComponentMapper, DbResource: DatabaseResource<Executor = T::Executor>>
+impl<'a, T: ComponentMapper, DbResource: DatabaseResource<Transaction = T::Executor>>
     TupleMarker<DbResource> for &T
 where
     <T as ComponentMapper>::Component: Component,
 {
 }
 
-impl<'a, T: ComponentMapper, DbResource: DatabaseResource<Executor = T::Executor>>
+impl<'a, T: ComponentMapper, DbResource: DatabaseResource<Transaction = T::Executor>>
     ReadMarker<DbResource> for &T
 where
     <T as ComponentMapper>::Component: Component,
 {
 }
 
-impl<'b, T: ComponentMapper, DbResource: DatabaseResource<Executor = T::Executor>>
+#[async_trait]
+impl<'b, T: ComponentMapper, DbResource: DatabaseResource<Transaction = T::Executor>>
     DBQueryInfo<DbResource> for &T
 where
     <T as ComponentMapper>::Component: Component,
@@ -395,38 +406,42 @@ where
     // type Mapper = T;
     type WorldQuery<'a> = &'a <T as ComponentMapper>::Component;
 
-    fn get<'w, D: DatabaseEntityWithRequest>(
+    type ReadOnlyItem<'a> = &'a <T as ComponentMapper>::Component;
+
+    type Item<'a> = &'a <T as ComponentMapper>::Component;
+
+    async fn get<'w, D: DatabaseEntityWithRequest>(
         db: &DbResource,
         world: UnsafeWorldCell<'w>,
         db_entity: &D,
-    ) -> Result<ReadOnlyItem<'w, Self, DbResource>, ()> {
-        SingleComponentRetriever::<T, DbResource>::get(db, world, db_entity)
+    ) -> Result<Self::ReadOnlyItem<'w>, ()> {
+        SingleComponentRetriever::<T, DbResource>::get(db, world, db_entity).await
     }
 
-    fn get_mut<'w, D: DatabaseEntityWithRequest>(
+    async fn get_mut<'w, D: DatabaseEntityWithRequest>(
         db: &DbResource,
         world: UnsafeWorldCell<'w>,
         db_entity: &D,
-    ) -> Result<Item<'w, Self, DbResource>, ()> {
-        SingleComponentRetriever::<T, DbResource>::get(db, world, db_entity)
+    ) -> Result<Self::Item<'w>, ()> {
+        SingleComponentRetriever::<T, DbResource>::get(db, world, db_entity).await
     }
 
-    fn update_component<'w>(
+    async fn update_component<'w>(
         db: &DbResource,
         world: UnsafeWorldCell<'w>,
         db_entity: &DatabaseEntity,
-        component: ReadOnlyItem<'w, Self, DbResource>,
+        component: Self::ReadOnlyItem<'w>,
     ) -> Result<(), ()> {
-        SingleComponentRetriever::<T, DbResource>::update_component(db, world, db_entity, component)
+        SingleComponentRetriever::<T, DbResource>::update_component(db, world, db_entity, component).await
     }
 
-    fn insert_component<'w>(
+    async fn insert_component<'w>(
         db: &DbResource,
         world: UnsafeWorldCell<'w>,
         db_entity: &DatabaseEntity,
-        component: ReadOnlyItem<'w, Self, DbResource>,
+        component: Self::ReadOnlyItem<'w>,
     ) -> Result<(), ()> {
-        SingleComponentRetriever::<T, DbResource>::insert_component(db, world, db_entity, component)
+        SingleComponentRetriever::<T, DbResource>::insert_component(db, world, db_entity, component).await
     }
 
     fn load_components<'w, R: ReturnSelector<'w>>(
@@ -436,7 +451,8 @@ where
         get_comp_from_db: impl FnOnce(
             DatabaseTransaction<'_, 'b, DbResource>,
         ) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>,
-    ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()> {
+    ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()> 
+    {
         SingleComponentRetriever::<T, DbResource>::load_components::<R>(
             db,
             world,
@@ -445,24 +461,25 @@ where
         )
     }
 
-    fn create(
+    async fn create(
         db: &DbResource,
         world: UnsafeWorldCell<'_>,
         component: Self::DerefItem,
         request: RequestId,
     ) -> Result<(), ()> {
-        SingleComponentRetriever::<T, DbResource>::create(db, world, component, request)
+        SingleComponentRetriever::<T, DbResource>::create(db, world, component, request).await
     }
 }
 
-impl<'b, T: ComponentMapper, DbResource: DatabaseResource<Executor = T::Executor>>
+impl<'b, T: ComponentMapper, DbResource: DatabaseResource<Transaction = T::Executor>>
     ReadMarker<DbResource> for &mut T
 where
     <T as ComponentMapper>::Component: Component,
 {
 }
 
-impl<'b, T: ComponentMapper, DbResource: DatabaseResource<Executor = T::Executor>>
+#[async_trait]
+impl<'b, T: ComponentMapper, DbResource: DatabaseResource<Transaction = T::Executor>>
     DBQueryInfo<DbResource> for &mut T
 where
     <T as ComponentMapper>::Component: Component,
@@ -471,38 +488,42 @@ where
     // type Mapper = T;
     type WorldQuery<'a> = &'a mut <T as ComponentMapper>::Component;
 
-    fn get<'w, D: DatabaseEntityWithRequest>(
+    type ReadOnlyItem<'a> = &'a <T as ComponentMapper>::Component;
+
+    type Item<'a> = Mut<'a, <T as ComponentMapper>::Component>;
+
+    async fn get<'w, D: DatabaseEntityWithRequest>(
         db: &DbResource,
         world: UnsafeWorldCell<'w>,
         db_entity: &D,
-    ) -> Result<ReadOnlyItem<'w, Self, DbResource>, ()> {
-        SingleComponentRetriever::<T, DbResource>::get(db, world, db_entity)
+    ) -> Result<Self::ReadOnlyItem<'w>, ()> {
+        SingleComponentRetriever::<T, DbResource>::get(db, world, db_entity).await
     }
 
-    fn get_mut<'w, D: DatabaseEntityWithRequest>(
+    async fn get_mut<'w, D: DatabaseEntityWithRequest>(
         db: &DbResource,
         world: UnsafeWorldCell<'w>,
         db_entity: &D,
-    ) -> Result<Item<'w, Self, DbResource>, ()> {
-        SingleComponentRetriever::<T, DbResource>::get_mut(db, world, db_entity)
+    ) -> Result<Self::Item<'w>, ()> {
+        SingleComponentRetriever::<T, DbResource>::get_mut(db, world, db_entity).await
     }
 
-    fn update_component<'w>(
+    async fn update_component<'w>(
         db: &DbResource,
         world: UnsafeWorldCell<'w>,
         db_entity: &DatabaseEntity,
-        component: ReadOnlyItem<'w, Self, DbResource>,
+        component: Self::ReadOnlyItem<'w>,
     ) -> Result<(), ()> {
-        SingleComponentRetriever::<T, DbResource>::update_component(db, world, db_entity, component)
+        SingleComponentRetriever::<T, DbResource>::update_component(db, world, db_entity, component).await
     }
 
-    fn insert_component<'w>(
+    async fn insert_component<'w>(
         db: &DbResource,
         world: UnsafeWorldCell<'w>,
         db_entity: &DatabaseEntity,
-        component: ReadOnlyItem<'w, Self, DbResource>,
+        component: Self::ReadOnlyItem<'w>,
     ) -> Result<(), ()> {
-        SingleComponentRetriever::<T, DbResource>::insert_component(db, world, db_entity, component)
+        SingleComponentRetriever::<T, DbResource>::insert_component(db, world, db_entity, component).await
     }
 
     fn load_components<'w, R: ReturnSelector<'w>>(
@@ -512,7 +533,8 @@ where
         get_comp_from_db: impl FnOnce(
             DatabaseTransaction<'_, 'b, DbResource>,
         ) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>,
-    ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()> {
+    ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()> 
+    {
         SingleComponentRetriever::<T, DbResource>::load_components::<R>(
             db,
             world,
@@ -521,13 +543,13 @@ where
         )
     }
 
-    fn create(
+    async fn create(
         db: &DbResource,
         world: UnsafeWorldCell<'_>,
         component: Self::DerefItem,
         request: RequestId,
     ) -> Result<(), ()> {
-        SingleComponentRetriever::<T, DbResource>::create(db, world, component, request)
+        SingleComponentRetriever::<T, DbResource>::create(db, world, component, request).await
     }
 }
 
@@ -540,50 +562,55 @@ macro_rules! simple_composition_of_db_queries {
     ( $( $name:ident )* ) => {
         // include this Head Z so that can specify that the rest of them have the same database
         // looks quite ugly but it works
+        #[async_trait]
         impl<Z: TupleMarker<DbResource>, $($name: TupleMarker<DbResource>, )* DbResource: DatabaseResource> DBQueryInfo<DbResource> for (Z, $($name,)*)
         {
             type DerefItem = (Z::DerefItem, $($name::DerefItem,)*);
             // type Mapper = NullMapper;
             type WorldQuery<'a> = (Z::WorldQuery<'a>, $($name::WorldQuery<'a>,)*);
 
-            fn get<'w, DbEntity: DatabaseEntityWithRequest>(db: &DbResource, world: UnsafeWorldCell<'w>, db_entity: &DbEntity) -> Result<ReadOnlyItem<'w, Self, DbResource>, ()> {
+            type ReadOnlyItem<'a> = (Z::ReadOnlyItem<'a>, $($name::ReadOnlyItem<'a>,)*);
+
+            type Item<'a> = (Z::Item<'a>, $($name::Item<'a>,)*);
+
+            async fn get<'w, DbEntity: DatabaseEntityWithRequest>(db: &DbResource, world: UnsafeWorldCell<'w>, db_entity: &DbEntity) -> Result<Self::ReadOnlyItem<'w>, ()> {
             //returns a tuple of all the gets
                 Ok((
-                    Z::get(db, world, db_entity)?,
+                    Z::get(db, world, db_entity).await?,
                     $(
                     {
-                        $name::get(db, world, db_entity)?
+                        $name::get(db, world, db_entity).await?
                     },
                 )*))
             }
 
-            fn get_mut<'w, DbEntity: DatabaseEntityWithRequest>(db: &DbResource, world: UnsafeWorldCell<'w>, db_entity: &DbEntity) -> Result<Item<'w, Self, DbResource>, ()> {
+            async fn get_mut<'w, DbEntity: DatabaseEntityWithRequest>(db: &DbResource, world: UnsafeWorldCell<'w>, db_entity: &DbEntity) -> Result<Self::Item<'w>, ()> {
                 //returns a tuple of all the gets
                 Ok((
-                    Z::get_mut(db, world, db_entity)?,
+                    Z::get_mut(db, world, db_entity).await?,
 
                     $(
                     {
-                        $name::get_mut(db, world, db_entity)?
+                        $name::get_mut(db, world, db_entity).await?
                     },
                 )*))
             }
 
-            fn update_component<'w>(db: &DbResource, world: UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: ReadOnlyItem<'w, Self, DbResource>) -> Result<(), ()> {
+            async fn update_component<'w>(db: &DbResource, world: UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
 
                 let (z, $(lower!($name),)*) = component;
 
-                Z::update_component(db, world, db_entity, z)?;
-                $($name::update_component(db, world, db_entity, lower!($name))?;)*
+                Z::update_component(db, world, db_entity, z).await?;
+                $($name::update_component(db, world, db_entity, lower!($name)).await?;)*
 
                 Ok(())
             }
 
-            fn insert_component<'w>(db: &DbResource, world: UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: ReadOnlyItem<'w, Self, DbResource>) -> Result<(), ()> {
+            async fn insert_component<'w>(db: &DbResource, world: UnsafeWorldCell<'w>, db_entity: &DatabaseEntity, component: Self::ReadOnlyItem<'w>) -> Result<(), ()> {
                 let (z, $(lower!($name),)*) = component;
 
-                Z::insert_component(db, world, db_entity, z)?;
-                $($name::insert_component(db, world, db_entity, lower!($name))?;)*
+                Z::insert_component(db, world, db_entity, z).await?;
+                $($name::insert_component(db, world, db_entity, lower!($name)).await?;)*
 
                 Ok(())
             }
@@ -598,11 +625,11 @@ macro_rules! simple_composition_of_db_queries {
                 unimplemented!()
             }
 
-            fn create(db: &DbResource, world: UnsafeWorldCell<'_>, component: Self::DerefItem, request: RequestId) -> Result<(), ()> {
+            async fn create(db: &DbResource, world: UnsafeWorldCell<'_>, component: Self::DerefItem, request: RequestId) -> Result<(), ()> {
                 let (z, $(lower!($name),)*) = component;
 
-                Z::create(db, world, z, request)?;
-                $($name::create(db, world, lower!($name), request)?;)*
+                Z::create(db, world, z, request).await?;
+                $($name::create(db, world, lower!($name), request).await?;)*
 
                 Ok(())
             }
@@ -631,23 +658,20 @@ pub struct SingleComponentRetriever<Mapper, DbResource> {
     phantom: std::marker::PhantomData<(Mapper, DbResource)>,
 }
 
-impl<
-        'a,
+impl<'a,
         MyMapper: ComponentMapper,
-        DbResource: DatabaseResource<Executor = <MyMapper as ComponentMapper>::Executor>,
+        DbResource: DatabaseResource<Transaction = <MyMapper as ComponentMapper>::Executor>,
     > SingleComponentRetriever<MyMapper, DbResource>
 where
     <MyMapper as ComponentMapper>::Component: Component,
 {
-    fn get_internal<D: DatabaseEntityWithRequest>(
+    pub async fn get_internal<D: DatabaseEntityWithRequest>(
         db: &DbResource,
         world: UnsafeWorldCell<'_>,
         db_entity: &D,
         component_preloaded: Option<<MyMapper as ComponentMapper>::Component>,
     ) -> Entity {
-        let arc = db.get_transaction(*db_entity.request());
-        let mut a = arc.write().unwrap();
-        let tr = a.as_mut().unwrap();
+        let mut tr = db.get_transaction(*db_entity.request());
 
         let db_entity_id = *db_entity.id();
 
@@ -676,7 +700,7 @@ where
                     None => {
                         let db_component = match component_preloaded {
                             Some(component) => component,
-                            None => block_on(MyMapper::get(&mut **tr, db_entity.id())).unwrap(),
+                            None => MyMapper::get(&mut tr, db_entity.id()).await.unwrap(),
                         };
                         // write the component to the entity
                         unsafe {
@@ -691,7 +715,7 @@ where
             None => {
                 let component = match component_preloaded {
                     Some(component) => component,
-                    None => block_on(MyMapper::get(&mut **tr, db_entity.id())).unwrap(),
+                    None => MyMapper::get(&mut tr, db_entity.id()).await.unwrap(),
                 };
                 unsafe {
                     let w = world.world_mut();
@@ -724,24 +748,23 @@ where
         >,
     ) -> Result<Vec<Entity>, ()> {
         let components = {
-            let arc = db.get_transaction(request);
-            let mut a = arc.write().unwrap();
-            let tr = a.as_mut().unwrap();
+            let mut tr = db.get_transaction(request);
 
-            get_comp_from_db(&mut *tr)?
+            get_comp_from_db(&mut tr)?
         };
 
-        let entities = components
-            .into_iter()
-            .map(|(db_entity, component)| {
-                Self::get_internal(db, world, &db_entity, Some(component))
-            })
-            .collect::<Vec<Entity>>();
+        // let entities = components
+        //     .into_iter()
+        //     .map(|(db_entity, component)| async {
+        //         block_on(Self::get_internal(db, world, &db_entity, Some(component)))
+        //     })
+        //     .collect::<Vec<Entity>>();
+        todo!();
 
-        Ok(entities)
+        // Ok(entities)
     }
 
-    pub fn update_or_insert_component(
+    pub async fn update_or_insert_component(
         db: &DbResource,
         world: UnsafeWorldCell<'_>,
         db_entity: &DatabaseEntity,
@@ -749,12 +772,12 @@ where
     ) -> Result<(), ()> {
         if db_entity.persisted.into() {
             if db_entity.dirty {
-                Self::update_component(db, world, db_entity, component)
+                Self::update_component(db, world, db_entity, component).await
             } else {
                 Ok(())
             }
         } else {
-            Self::insert_component(db, world, db_entity, component)
+            Self::insert_component(db, world, db_entity, component).await
         }
     }
 }
@@ -777,23 +800,26 @@ impl<'w, C: WorldQuery> ReturnSelector<'w> for C {
     }
 }
 
+#[async_trait]
 impl<
         'b,
         MyMapper: ComponentMapper,
-        DbResource: DatabaseResource<Executor = <MyMapper as ComponentMapper>::Executor>,
+        DbResource: DatabaseResource<Transaction = <MyMapper as ComponentMapper>::Executor>,
     > DBQueryInfo<DbResource> for SingleComponentRetriever<MyMapper, DbResource>
 where
     <MyMapper as ComponentMapper>::Component: Component,
 {
     type DerefItem = MyMapper::Component;
     type WorldQuery<'a> = &'a mut MyMapper::Component;
+    type ReadOnlyItem<'a> = &'a MyMapper::Component;
+    type Item<'a> = Mut<'a, MyMapper::Component>;
 
-    fn get<'w, D: DatabaseEntityWithRequest>(
+    async fn get<'w, D: DatabaseEntityWithRequest>(
         db: &DbResource,
         world: UnsafeWorldCell<'w>,
         db_entity: &D,
-    ) -> Result<ReadOnlyItem<'w, Self, DbResource>, ()> {
-        let entity = Self::get_internal(db, world, db_entity, None);
+    ) -> Result<Self::ReadOnlyItem<'w>, ()> {
+        let entity = Self::get_internal(db, world, db_entity, None).await;
 
         unsafe {
             Ok(world
@@ -803,12 +829,12 @@ where
         }
     }
 
-    fn get_mut<'w, D: DatabaseEntityWithRequest>(
+    async fn get_mut<'w, D: DatabaseEntityWithRequest>(
         db: &DbResource,
         world: UnsafeWorldCell<'w>,
         db_entity: &D,
-    ) -> Result<Item<'w, Self, DbResource>, ()> {
-        let entity = Self::get_internal(db, world, db_entity, None);
+    ) -> Result<Self::Item<'w>, ()> {
+        let entity = Self::get_internal(db, world, db_entity, None).await;
 
         unsafe {
             // set entity to dirty
@@ -827,35 +853,31 @@ where
         }
     }
 
-    fn update_component<'w>(
+    async fn update_component<'w>(
         db: &DbResource,
         _world: UnsafeWorldCell<'w>,
         db_entity: &DatabaseEntity,
         component: ReadOnlyItem<'w, Self, DbResource>,
     ) -> Result<(), ()> {
-        let arc = db.get_transaction(*db_entity.request());
-        let mut a = arc.write().unwrap();
-        let tr = a.as_mut().unwrap();
+        let mut tr = db.get_transaction(*db_entity.request());
 
         block_on(MyMapper::update_component(
-            &mut **tr,
+            &mut tr,
             db_entity.id(),
             component,
         ))
     }
 
-    fn insert_component<'w>(
+    async fn insert_component<'w>(
         db: &DbResource,
         _world: UnsafeWorldCell<'w>,
         db_entity: &DatabaseEntity,
         component: ReadOnlyItem<'w, Self, DbResource>,
     ) -> Result<(), ()> {
-        let arc = db.get_transaction(*db_entity.request());
-        let mut a = arc.write().unwrap();
-        let tr = a.as_mut().unwrap();
+        let mut tr = db.get_transaction(*db_entity.request());
 
         block_on(MyMapper::insert_component(
-            &mut **tr,
+            &mut tr,
             db_entity.id(),
             component,
         ))
@@ -868,14 +890,15 @@ where
         get_comp_from_db: impl FnOnce(
             DatabaseTransaction<'_, 'b, DbResource>,
         ) -> Result<Vec<(DatabaseEntity, Self::DerefItem)>, ()>,
-    ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()> {
+    ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()> 
+    {
         let entities = Self::load_entities_for_components(db, world, request, get_comp_from_db)?;
 
         let components = R::load_components_from_entities(world, entities);
         Ok(components)
     }
 
-    fn create(
+    async fn create(
         db: &DbResource,
         world: UnsafeWorldCell<'_>,
         component: Self::DerefItem,

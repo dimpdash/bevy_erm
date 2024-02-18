@@ -1,3 +1,5 @@
+use std::borrow::BorrowMut;
+
 use async_trait::async_trait;
 use bevy_erm::*;
 
@@ -40,15 +42,17 @@ impl BuyerQuery {
 #[async_trait]
 impl ComponentMapper for BuyerQuery {
     type Component = Buyer;
-    type Executor = <bevy_erm::AnyDatabaseResource as bevy_erm::DatabaseResource>::Executor;
+    type Executor = <bevy_erm::AnyDatabaseResource as bevy_erm::DatabaseResource>::Transaction;
 
     async fn get<'c>(
-        conn: &mut Self::Executor,
+        tr: &mut Self::Executor,
         db_entity: &DatabaseEntityId,
     ) -> Result<Self::Component, ()> {
+        let mut guard = tr.lock().await;
+        let tr = guard.a.as_mut().unwrap();
         let buyer_bool = sqlx::query("SELECT buyer FROM users WHERE id = ?")
             .bind(db_entity)
-            .fetch_one(conn)
+            .fetch_one(&mut **tr)
             .await;
         match buyer_bool {
             Ok(_) => Ok(Buyer {}),
@@ -69,9 +73,11 @@ impl ComponentMapper for BuyerQuery {
         db_entity: &DatabaseEntityId,
         _component: &Self::Component,
     ) -> Result<(), ()> {
+        let mut guard = tr.lock().await;
+        let tr = guard.a.as_mut().unwrap();
         let r = sqlx::query("UPDATE users SET buyer = 1 WHERE id = ?")
             .bind(db_entity)
-            .execute(tr)
+            .execute(&mut **tr)
             .await;
 
         match r {
@@ -132,15 +138,17 @@ impl UserQuery {
 #[async_trait]
 impl ComponentMapper for UserQuery {
     type Component = User;
-    type Executor = <bevy_erm::AnyDatabaseResource as bevy_erm::DatabaseResource>::Executor;
+    type Executor = <bevy_erm::AnyDatabaseResource as bevy_erm::DatabaseResource>::Transaction;
 
     async fn get<'c>(
-        conn: &mut Self::Executor,
+        tr: &mut Self::Executor,
         db_entity: &DatabaseEntityId,
     ) -> Result<Self::Component, ()> {
+        let mut guard = tr.lock().await;
+        let tr = guard.a.as_mut().unwrap();
         let user = sqlx::query_as::<_, User>("SELECT name FROM users WHERE id = ?")
             .bind(db_entity)
-            .fetch_one(conn)
+            .fetch_one(&mut **tr)
             .await
             .unwrap();
         Ok(user)
@@ -151,10 +159,13 @@ impl ComponentMapper for UserQuery {
         db_entity: &DatabaseEntityId,
         component: &Self::Component,
     ) -> Result<(), ()> {
+        let mut guard = tr.lock().await;
+        let tr = guard.a.as_mut().unwrap();
+        
         let r = sqlx::query("UPDATE users SET name = ? WHERE id = ?")
             .bind(component.name.clone())
             .bind(db_entity)
-            .execute(tr)
+            .execute(&mut **tr)
             .await;
         match r {
             Ok(_) => Ok(()),
@@ -167,10 +178,12 @@ impl ComponentMapper for UserQuery {
         db_entity: &DatabaseEntityId,
         component: &Self::Component,
     ) -> Result<(), ()> {
+        let mut guard = tr.lock().await;
+        let tr = guard.a.as_mut().unwrap();
         let r = sqlx::query("INSERT INTO users (id, name) VALUES (?, ?)")
             .bind(db_entity)
             .bind(component.name.clone())
-            .execute(tr)
+            .execute(&mut **tr)
             .await;
 
         match r {
@@ -230,15 +243,18 @@ impl SellerQuery {
 #[async_trait]
 impl ComponentMapper for SellerQuery {
     type Component = Seller;
-    type Executor = <bevy_erm::AnyDatabaseResource as bevy_erm::DatabaseResource>::Executor;
+    type Executor = <bevy_erm::AnyDatabaseResource as bevy_erm::DatabaseResource>::Transaction;
 
     async fn get<'c>(
-        conn: &mut Self::Executor,
+        tr: &mut Self::Executor,
         db_entity: &DatabaseEntityId,
     ) -> Result<Self::Component, ()> {
+        let mut guard = tr.lock().await;
+        let tr = guard.a.as_mut().unwrap();
+        
         let seller_bool = sqlx::query("SELECT seller FROM users WHERE id = ?")
             .bind(db_entity)
-            .fetch_one(conn)
+            .fetch_one(&mut **tr)
             .await;
         match seller_bool {
             Ok(_) => Ok(Seller {}),
@@ -259,9 +275,12 @@ impl ComponentMapper for SellerQuery {
         db_entity: &DatabaseEntityId,
         _component: &Self::Component,
     ) -> Result<(), ()> {
+        let mut guard = tr.lock().await;
+        let tr = guard.a.as_mut().unwrap();
+        
         let r = sqlx::query("UPDATE users SET seller = 1 WHERE id = ?")
             .bind(db_entity)
-            .execute(tr)
+            .execute(&mut **tr)
             .await;
 
         match r {
@@ -372,15 +391,18 @@ impl ItemQuery {
 #[async_trait]
 impl ComponentMapper for ItemQuery {
     type Component = MarketItem;
-    type Executor = <bevy_erm::AnyDatabaseResource as bevy_erm::DatabaseResource>::Executor;
+    type Executor = <bevy_erm::AnyDatabaseResource as bevy_erm::DatabaseResource>::Transaction;
 
     async fn get<'c>(
-        conn: &mut Self::Executor,
+        tr: &mut Self::Executor,
         db_entity: &DatabaseEntityId,
     ) -> Result<Self::Component, ()> {
+        let mut guard = tr.lock().await;
+        let tr = guard.a.as_mut().unwrap();
+        
         let item = sqlx::query_as::<_, MarketItem>("SELECT * FROM items WHERE id = ?")
             .bind(db_entity)
-            .fetch_one(conn)
+            .fetch_one(&mut **tr)
             .await
             .unwrap();
         Ok(item)
@@ -391,12 +413,14 @@ impl ComponentMapper for ItemQuery {
         db_entity: &DatabaseEntityId,
         component: &Self::Component,
     ) -> Result<(), ()> {
+        let mut guard = tr.lock().await;
+        let tr = guard.a.as_mut().unwrap();
         let r = sqlx::query("UPDATE items SET seller_id = ?, name = ?, price = ? WHERE id = ?")
             .bind(component.seller_id)
             .bind(component.name.clone())
             .bind(component.price)
             .bind(db_entity)
-            .execute(tr)
+            .execute(&mut **tr)
             .await;
         match r {
             Ok(_) => Ok(()),
@@ -409,12 +433,14 @@ impl ComponentMapper for ItemQuery {
         db_entity: &DatabaseEntityId,
         component: &Self::Component,
     ) -> Result<(), ()> {
+        let mut guard = tr.lock().await;
+        let tr = guard.a.as_mut().unwrap();
         let r = sqlx::query("INSERT INTO items (id, seller_id, name, price) VALUES (?, ?, ?, ?)")
             .bind(db_entity)
             .bind(component.seller_id)
             .bind(component.name.clone())
             .bind(component.price)
-            .execute(tr)
+            .execute(&mut **tr)
             .await;
 
         match r {
@@ -477,17 +503,20 @@ impl PurchaseItemQuery {
 
 #[async_trait]
 impl ComponentMapper for PurchaseItemQuery {
-    type Executor = <bevy_erm::AnyDatabaseResource as bevy_erm::DatabaseResource>::Executor;
+    type Executor = <bevy_erm::AnyDatabaseResource as bevy_erm::DatabaseResource>::Transaction;
     type Component = PurchasedItem;
 
     async fn get<'c>(
-        conn: &mut Self::Executor,
+        tr: &mut Self::Executor,
         db_entity: &DatabaseEntityId,
     ) -> Result<Self::Component, ()> {
+        let mut guard = tr.lock().await;
+        let tr = guard.a.as_mut().unwrap();
+        
         let item =
             sqlx::query_as::<_, PurchasedItem>("SELECT item FROM purchased_items WHERE id = ?")
                 .bind(db_entity)
-                .fetch_one(conn)
+                .fetch_one(&mut **tr)
                 .await
                 .unwrap();
         Ok(item)
@@ -498,11 +527,13 @@ impl ComponentMapper for PurchaseItemQuery {
         db_entity: &DatabaseEntityId,
         component: &Self::Component,
     ) -> Result<(), ()> {
+        let mut guard = tr.lock().await;
+        let tr = guard.a.as_mut().unwrap();
         let r = sqlx::query("UPDATE purchased_items SET item = ?, buyer = ? WHERE id = ?")
             .bind(component.item)
             .bind(component.buyer)
             .bind(db_entity)
-            .execute(tr)
+            .execute(&mut **tr)
             .await;
         match r {
             Ok(_) => Ok(()),
@@ -515,11 +546,13 @@ impl ComponentMapper for PurchaseItemQuery {
         db_entity: &DatabaseEntityId,
         component: &Self::Component,
     ) -> Result<(), ()> {
+        let mut guard = tr.lock().await;
+        let tr = guard.a.as_mut().unwrap();
         let r = sqlx::query("INSERT INTO purchased_items (id, item, buyer) VALUES (?, ?, ?)")
             .bind(db_entity.0)
             .bind(component.item)
             .bind(component.buyer)
-            .execute(tr)
+            .execute(&mut **tr)
             .await;
 
         match r {

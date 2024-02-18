@@ -6,6 +6,8 @@ use std::{
 
 use bevy_ecs::{component::ComponentId, prelude::*};
 use bevy_mod_index::index::Index;
+use futures::lock::Mutex;
+use futures::lock::MutexGuard;
 
 use futures::executor::block_on;
 use generational_arena::Arena;
@@ -20,14 +22,13 @@ use crate::database_query::*;
 // Left the indirection in case I want to change it later
 
 pub trait DatabaseResource: Resource + Default {
-    type Executor;
-    type Transaction: Deref<Target = Self::Executor> + DerefMut;
+    type Transaction: Send;
 
     // A way to get a unique key for the database
     fn get_key(&self) -> DatabaseEntityId;
     fn start_new_transaction(&self) -> RequestId;
     fn try_start_new_transaction(&self) -> Option<RequestId>;
-    fn get_transaction(&self, request: RequestId) -> Arc<RwLock<Option<Self::Transaction>>>;
+    fn get_transaction(&self, request: RequestId) -> Self::Transaction;
 
     fn commit_transaction(&self, request: RequestId);
 }
@@ -38,7 +39,7 @@ pub struct DatabaseHandle {
 
     // Require the option so that we can remove the transaction from the read write lock
     // when committing
-    pub tr: RwLock<Arena<Arc<RwLock<Option<Transaction<'static, sqlx::Sqlite>>>>>>,
+    pub tr: RwLock<Arena<Arc<Mutex<A>>>>,
     min_key: RwLock<i64>,
 }
 
@@ -72,7 +73,17 @@ unsafe impl Send for DatabaseHandle {}
 
 unsafe impl Sync for AnyDatabaseResource {}
 
+#[derive(Debug)]
+pub struct A{
+    pub a: Option<Transaction<'static, sqlx::Sqlite>>
+}
+
+unsafe impl Send for A {}
+unsafe impl Sync for A {}
+
 impl DatabaseResource for AnyDatabaseResource {
+    type Transaction = Arc<Mutex<A>>;
+
     // Rather than actually querying the database for key just hold on to the last key we had to issue
     // This is a bit of a hack but it's fine for now. As POC and only considering one machine
     // It is progressing into the negatives so that instantiating any objects with positive keys will not conflict
@@ -85,30 +96,31 @@ impl DatabaseResource for AnyDatabaseResource {
     fn start_new_transaction(&self) -> RequestId {
         let mut transactions = self.db.tr.write().unwrap();
         let transaction = block_on(self.db.pool.write().unwrap().begin()).unwrap();
-        let request = transactions.insert(Arc::new(RwLock::new(Some(transaction))));
+        let request = transactions.insert(Arc::new(Mutex::new(A{a: Some(transaction)})));
         RequestId(request)
     }
 
     fn try_start_new_transaction(&self) -> Option<RequestId> {
         let mut transactions = self.db.tr.write().unwrap();
         let transaction = block_on(self.db.pool.write().unwrap().try_begin()).unwrap()?;
-        let request = transactions.insert(Arc::new(RwLock::new(Some(transaction))));
+        let request = transactions.insert(Arc::new(Mutex::new(A{a: Some(transaction)})));
         Some(RequestId(request))
     }
 
     fn commit_transaction(&self, request: RequestId) {
-        let database_handle = &self.db;
-        let mut arena = database_handle.tr.write().unwrap();
-        let tr_lock = arena.remove(request.0).unwrap();
-        let mut tr_lock_guard = tr_lock.write().unwrap();
-        let tr = tr_lock_guard.take().unwrap();
-        block_on(tr.commit()).unwrap();
+        block_on( async {
+            let database_handle = &self.db;
+            let mut arena = database_handle.tr.write().unwrap();
+            let tr_lock = arena.remove(request.0).unwrap();
+            let tr_lock_guard = tr_lock.lock();
+            let tr = tr_lock_guard.await.a.take().unwrap();
+            block_on(tr.commit()).unwrap();
+        })
     }
 
-    type Executor = sqlx::SqliteConnection;
-    type Transaction = Transaction<'static, sqlx::Sqlite>;
 
-    fn get_transaction(&self, request: RequestId) -> Arc<RwLock<Option<Self::Transaction>>> {
+
+    fn get_transaction(&self, request: RequestId) -> Self::Transaction {
         let database_handle = &self.db;
         let arena = database_handle.tr.read().unwrap();
         arena.get(request.0).unwrap().clone()
