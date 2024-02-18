@@ -13,7 +13,7 @@ repository = "https://github.com/dimpdash/bevy_erm"
 
 [[examples]]
 name = "marketplace"
-license = "MIT OR Apache-2.0"
+license = "Apache-2.0"
 
 
 [dependencies]
