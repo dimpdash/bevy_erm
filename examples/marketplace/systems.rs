@@ -250,8 +250,8 @@ pub fn poll_webserver_for_requests(
     }
 
     // create two purchase events
-    println!("====================================");
-    println!("Polling webserver for requests");
+    // println!("====================================");
+    // println!("Polling webserver for requests");
     while webserver.is_messages_to_send() {
         if let Some(request) = db.try_start_new_transaction() {
             let purchase_event = Purchase {
@@ -269,7 +269,7 @@ pub fn poll_webserver_for_requests(
             break;
         }
     }
-    println!();
+    // println!();
 }
 
 pub fn should_exit(
