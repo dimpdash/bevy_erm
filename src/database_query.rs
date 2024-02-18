@@ -200,15 +200,15 @@ impl<'w, 's, Q: DBQueryInfo<DbResource>, DbResource: DatabaseResource>
                 .query::<(&DatabaseEntity, Q::WorldQuery<'w>)>();
             let (db_entity, comp) = q.get(self.world.world(), entity).unwrap();
 
-            if db_entity.persisted.into() {
-                if db_entity.dirty {
-                    block_on(Q::update_component(self.db.as_ref(), self.world, db_entity, comp))
-                } else {
-                    Ok(())
-                }
-            } else {
-                block_on(Q::insert_component(self.db.as_ref(), self.world, db_entity, comp))
-            }
+            // if db_entity.persisted.into() {
+            //     if db_entity.dirty {
+            //         block_on(Q::update_component(self.db.as_ref(), self.world, db_entity, comp))
+            //     } else {
+            //         Ok(())
+            //     }
+            // } else {
+            //     block_on(Q::insert_component(self.db.as_ref(), self.world, db_entity, comp))
+            // }
             todo!()
         }
     }
