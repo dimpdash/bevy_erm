@@ -114,7 +114,7 @@ impl DatabaseResource for AnyDatabaseResource {
             let tr_lock = arena.remove(request.0).unwrap();
             let tr_lock_guard = tr_lock.lock();
             let tr = tr_lock_guard.await.a.take().unwrap();
-            block_on(tr.commit()).unwrap();
+            tr.commit().await.unwrap();
         })
     }
 
@@ -154,7 +154,7 @@ pub fn flush_component_to_db<
 {
     for flush_event in flush_events.read() {
         for entity in index.lookup(&flush_event.request) {
-            db_query.update_or_insert_component(entity).unwrap();
+            block_on(db_query.update_or_insert_component(entity)).unwrap();
         }
 
         db_query.commit(flush_event.request).unwrap();

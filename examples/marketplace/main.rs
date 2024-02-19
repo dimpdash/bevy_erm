@@ -40,14 +40,14 @@ impl Plugin for MarketplacePlugin {
             .add_event::<PurchaseResponse>()
             .add_event::<PrintTable>()
             .init_resource::<WebServer>()
-            // .add_systems(Startup, create_tables)
-            // .add_systems(PreUpdate, poll_webserver_for_requests)
-            // .add_systems(PreUpdate, should_exit)
-            // .add_systems(Update, purchase_system)
-            // .add_systems(Update, flush_purchase.after(purchase_system))
-            // .add_systems(PostUpdate, print_items_table)
-            // .add_systems(PostUpdate, print_users_table)
-            // .add_systems(PostUpdate, print_purchased_items_table)
+            .add_systems(Startup, create_tables)
+            .add_systems(PreUpdate, poll_webserver_for_requests)
+            .add_systems(PreUpdate, should_exit)
+            .add_systems(Update, purchase_system)
+            .add_systems(Update, flush_purchase.after(purchase_system))
+            .add_systems(PostUpdate, print_items_table)
+            .add_systems(PostUpdate, print_users_table)
+            .add_systems(PostUpdate, print_purchased_items_table)
             ;
     }
 }
@@ -55,7 +55,7 @@ impl Plugin for MarketplacePlugin {
 #[tokio::main]
 async fn main() {
     App::new()
-        // .set_runner(runner)
+        .set_runner(runner)
         .add_plugins(MarketplacePlugin)
         .run();
 }

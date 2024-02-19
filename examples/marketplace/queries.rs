@@ -1,41 +1,44 @@
+#![feature(async_closure)]
+
 use std::borrow::BorrowMut;
 
 use async_trait::async_trait;
-use bevy_erm::*;
+use bevy_erm::{database_query::{CustomDatabaseQuery, DatabaseTransaction}, *};
 
 use crate::components::*;
 use futures::executor::block_on;
-use sqlx::Row;
+use sqlx::{Row, Transaction};
 
 pub struct BuyerQuery {}
-impl BuyerQuery {
-    pub fn load_all(
-        request: RequestId,
-    ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, Buyer)>, ()> {
-        move |conn: &mut sqlx::SqliteConnection| {
-            let buyers =
-                block_on(sqlx::query("SELECT id FROM users WHERE buyer = 1").fetch_all(conn))
-                    .unwrap();
 
-            let buyers = buyers
-                .into_iter()
-                .map(|row| {
-                    let id = row.get("id");
+pub struct BuyerQueryLoadAll(pub RequestId);
 
-                    (
-                        DatabaseEntity {
-                            id,
-                            persisted: true.into(),
-                            dirty: false,
-                            request,
-                        },
-                        Buyer {},
-                    )
-                })
-                .collect();
+#[async_trait]
+impl CustomDatabaseQuery<AnyDatabaseResource, Buyer> for BuyerQueryLoadAll {
+    async fn query(&self, tr: DatabaseTransaction<AnyDatabaseResource>) -> Result<Vec<(DatabaseEntity, Buyer)>, ()> {
+        let mut guard = tr.lock().await;
+        let tr = guard.a.as_mut().unwrap();
+        let buyers =
+            sqlx::query("SELECT id FROM users WHERE buyer = 1").fetch_all(&mut **tr).await.unwrap();
 
-            Ok(buyers)
-        }
+        let buyers = buyers
+            .into_iter()
+            .map(|row| {
+                let id = row.get("id");
+
+                (
+                    DatabaseEntity {
+                        id,
+                        persisted: true.into(),
+                        dirty: false,
+                        request: self.0,
+                    },
+                    Buyer {},
+                )
+            })
+            .collect();
+
+        Ok(buyers)
     }
 }
 
@@ -102,38 +105,42 @@ impl ComponentMapper for BuyerQuery {
     // }
 }
 
-pub struct UserQuery {}
 
-impl UserQuery {
-    pub fn load_all(
-        request: RequestId,
-    ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, User)>, ()> {
-        move |conn: &mut sqlx::SqliteConnection| {
-            let users =
-                block_on(sqlx::query("SELECT id, name FROM users").fetch_all(conn)).unwrap();
+pub struct UserQueryLoadAll(pub RequestId);
 
-            let users = users
-                .into_iter()
-                .map(|row| {
-                    let id = row.get("id");
-                    let name = row.get("name");
 
-                    (
-                        DatabaseEntity {
-                            id,
-                            persisted: true.into(),
-                            dirty: false,
-                            request,
-                        },
-                        User { name },
-                    )
-                })
-                .collect();
+#[async_trait]
+impl CustomDatabaseQuery<AnyDatabaseResource, User> for UserQueryLoadAll {
+    async fn query(&self, tr: DatabaseTransaction<AnyDatabaseResource>) -> Result<Vec<(DatabaseEntity, User)>, ()> {
+        let mut guard = tr.lock().await;
+        let tr = guard.a.as_mut().unwrap();
+        let users =
+            sqlx::query("SELECT id, name FROM users").fetch_all(&mut **tr).await.unwrap();
 
-            Ok(users)
-        }
+        let users = users
+            .into_iter()
+            .map(|row| {
+                let id = row.get("id");
+                let name = row.get("name");
+
+                (
+                    DatabaseEntity {
+                        id,
+                        persisted: true.into(),
+                        dirty: false,
+                        request: self.0,
+                    },
+                    User { name },
+                )
+            })
+            .collect();
+
+        Ok(users)
+    
     }
+
 }
+pub struct UserQuery {}
 
 #[async_trait]
 impl ComponentMapper for UserQuery {
@@ -209,35 +216,36 @@ impl ComponentMapper for UserQuery {
 
 pub struct SellerQuery {}
 
-impl SellerQuery {
-    pub fn load_all(
-        request: RequestId,
-    ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, Seller)>, ()> {
-        move |conn: &mut sqlx::SqliteConnection| {
-            let sellers =
-                block_on(sqlx::query("SELECT id FROM users WHERE seller = 1").fetch_all(conn))
-                    .unwrap();
+pub struct SellerQueryLoadAll(pub RequestId);
+#[async_trait]
+impl CustomDatabaseQuery<AnyDatabaseResource, Seller> for SellerQueryLoadAll {
+    async fn query(&self, tr: DatabaseTransaction<AnyDatabaseResource>) -> Result<Vec<(DatabaseEntity, Seller)>, ()> {
+        let mut guard = tr.lock().await;
+        let tr = guard.a.as_mut().unwrap();
+        let sellers =
+            sqlx::query("SELECT id FROM users WHERE seller = 1").fetch_all(&mut **tr).await.unwrap();
 
-            let sellers = sellers
-                .into_iter()
-                .map(|row| {
-                    let id = row.get("id");
+        let sellers = sellers
+            .into_iter()
+            .map(|row| {
+                let id = row.get("id");
 
-                    (
-                        DatabaseEntity {
-                            id,
-                            persisted: true.into(),
-                            dirty: false,
-                            request,
-                        },
-                        Seller {},
-                    )
-                })
-                .collect();
+                (
+                    DatabaseEntity {
+                        id,
+                        persisted: true.into(),
+                        dirty: false,
+                        request: self.0,
+                    },
+                    Seller {},
+                )
+            })
+            .collect();
 
-            Ok(sellers)
-        }
+        Ok(sellers)
+    
     }
+
 }
 
 #[async_trait]
@@ -307,85 +315,43 @@ impl ComponentMapper for SellerQuery {
 
 pub struct ItemQuery {}
 
-impl ItemQuery {
-    pub fn load_all(
-        request: RequestId,
-    ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, MarketItem)>, ()>
-    {
-        move |conn: &mut sqlx::SqliteConnection| {
-            let items = block_on(
-                sqlx::query("SELECT id, seller_id, name, price FROM items").fetch_all(conn),
-            )
-            .unwrap();
+pub struct ItemQueryLoadAll(pub RequestId);
+#[async_trait]
+impl CustomDatabaseQuery<AnyDatabaseResource, MarketItem> for ItemQueryLoadAll {
+    async fn query(&self, tr: DatabaseTransaction<AnyDatabaseResource>) -> Result<Vec<(DatabaseEntity, MarketItem)>, ()> {
+        let mut guard = tr.lock().await;
+        let tr = guard.a.as_mut().unwrap();
+        let items =
+            sqlx::query("SELECT id, seller_id, name, price FROM items").fetch_all(&mut **tr).await.unwrap();
 
-            let items = items
-                .into_iter()
-                .map(|row| {
-                    let id = row.get("id");
-                    let seller_id = row.get("seller_id");
-                    let name = row.get("name");
-                    let price = row.get("price");
+        let items = items
+            .into_iter()
+            .map(|row| {
+                let id = row.get("id");
+                let seller_id = row.get("seller_id");
+                let name = row.get("name");
+                let price = row.get("price");
 
-                    (
-                        DatabaseEntity {
-                            id,
-                            persisted: true.into(),
-                            dirty: false,
-                            request,
-                        },
-                        MarketItem {
-                            seller_id,
-                            name,
-                            price,
-                        },
-                    )
-                })
-                .collect();
+                (
+                    DatabaseEntity {
+                        id,
+                        persisted: true.into(),
+                        dirty: false,
+                        request: self.0,
+                    },
+                    MarketItem {
+                        seller_id,
+                        name,
+                        price,
+                    },
+                )
+            })
+            .collect();
 
-            Ok(items)
-        }
+        Ok(items)
+    
     }
 
-    #[allow(dead_code)]
-    pub fn load_items_of_seller(
-        seller: DatabaseEntity,
-    ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, MarketItem)>, ()>
-    {
-        move |conn: &mut sqlx::SqliteConnection| {
-            let items = block_on(
-                sqlx::query("SELECT id, seller_id, name, price FROM items WHERE seller_id = ?")
-                    .bind(seller.id.0)
-                    .fetch_all(conn),
-            )
-            .unwrap();
-
-            let items = items
-                .into_iter()
-                .map(|row| {
-                    let id = row.get("id");
-                    let seller_id = row.get("seller_id");
-                    let name = row.get("name");
-                    let price = row.get("price");
-
-                    (
-                        DatabaseEntity {
-                            id,
-                            persisted: true.into(),
-                            dirty: false,
-                            request: seller.request,
-                        },
-                        MarketItem {
-                            seller_id,
-                            name,
-                            price,
-                        },
-                    )
-                })
-                .collect();
-
-            Ok(items)
-        }
-    }
 }
 
 #[async_trait]
@@ -466,39 +432,38 @@ impl ComponentMapper for ItemQuery {
 
 pub struct PurchaseItemQuery {}
 
-impl PurchaseItemQuery {
-    pub fn load_all(
-        request: RequestId,
-    ) -> impl FnOnce(&mut sqlx::SqliteConnection) -> Result<Vec<(DatabaseEntity, PurchasedItem)>, ()>
-    {
-        move |conn: &mut sqlx::SqliteConnection| {
-            let items = block_on(
-                sqlx::query("SELECT id, item, buyer FROM purchased_items").fetch_all(conn),
-            )
-            .unwrap();
+pub struct PurchaseItemQueryLoadAll(pub RequestId);
+#[async_trait]
+impl CustomDatabaseQuery<AnyDatabaseResource, PurchasedItem> for PurchaseItemQueryLoadAll {
+    async fn query(&self, tr: DatabaseTransaction<AnyDatabaseResource>) -> Result<Vec<(DatabaseEntity, PurchasedItem)>, ()> {
+        let mut guard = tr.lock().await;
+        let tr = guard.a.as_mut().unwrap();
+        let items =
+            sqlx::query("SELECT id, item, buyer FROM purchased_items").fetch_all(&mut **tr).await.unwrap();
 
-            let items = items
-                .into_iter()
-                .map(|row| {
-                    let id = row.get("id");
-                    let item = row.get("item");
-                    let buyer = row.get("buyer");
+        let items = items
+            .into_iter()
+            .map(|row| {
+                let id = row.get("id");
+                let item = row.get("item");
+                let buyer = row.get("buyer");
 
-                    (
-                        DatabaseEntity {
-                            id,
-                            persisted: true.into(),
-                            dirty: false,
-                            request,
-                        },
-                        PurchasedItem { item, buyer },
-                    )
-                })
-                .collect();
+                (
+                    DatabaseEntity {
+                        id,
+                        persisted: true.into(),
+                        dirty: false,
+                        request: self.0,
+                    },
+                    PurchasedItem { item, buyer },
+                )
+            })
+            .collect();
 
-            Ok(items)
-        }
+        Ok(items)
+    
     }
+
 }
 
 #[async_trait]
