@@ -35,7 +35,7 @@ pub trait DBQueryInfo<DbResource: DatabaseResource> {
     // Used when inserting or updating components for the Database Query
     type WorldQuery<'a>: WorldQuery;
     type DerefItem: Send;
-    type ReadOnlyItem<'a>: Send;
+    type ReadOnlyItem<'a>: Send + From<ReadOnlyItem<'a, Self, DbResource>>;
     type Item<'a>: Send;
 
     async fn get<'w, D: DatabaseEntityWithRequest>(
@@ -200,16 +200,15 @@ impl<'w, 's, Q: DBQueryInfo<DbResource>, DbResource: DatabaseResource>
                 .query::<(&DatabaseEntity, Q::WorldQuery<'w>)>();
             let (db_entity, comp) = q.get(self.world.world(), entity).unwrap();
 
-            // if db_entity.persisted.into() {
-            //     if db_entity.dirty {
-            //         block_on(Q::update_component(self.db.as_ref(), self.world, db_entity, comp))
-            //     } else {
-            //         Ok(())
-            //     }
-            // } else {
-            //     block_on(Q::insert_component(self.db.as_ref(), self.world, db_entity, comp))
-            // }
-            todo!()
+            if db_entity.persisted.into() {
+                if db_entity.dirty {
+                    block_on(Q::update_component(self.db.as_ref(), self.world, db_entity, comp.into()))
+                } else {
+                    Ok(())
+                }
+            } else {
+                block_on(Q::insert_component(self.db.as_ref(), self.world, db_entity, comp.into()))
+            }
         }
     }
 
@@ -298,12 +297,15 @@ pub trait TupleMarker<DbResource: DatabaseResource>: DBQueryInfo<DbResource> {}
 
 impl<T: DBQueryInfo<DbResource>, DbResource: DatabaseResource> TupleMarker<DbResource>
     for Option<T>
+    where for<'a> Option<<T as DBQueryInfo<DbResource>>::ReadOnlyItem<'a>>: From<Option<ReadOnlyItem<'a, T, DbResource>>>
 {
 }
 
 #[async_trait]
 impl<T: DBQueryInfo<DbResource>, DbResource: DatabaseResource> DBQueryInfo<DbResource>
     for Option<T>
+
+    where for<'a> Option<<T as DBQueryInfo<DbResource>>::ReadOnlyItem<'a>>: From<Option<ReadOnlyItem<'a, T, DbResource>>>
 {
     type DerefItem = Option<<T as DBQueryInfo<DbResource>>::DerefItem>;
 
@@ -564,6 +566,17 @@ macro_rules! simple_composition_of_db_queries {
         // looks quite ugly but it works
         #[async_trait]
         impl<Z: TupleMarker<DbResource>, $($name: TupleMarker<DbResource>, )* DbResource: DatabaseResource> DBQueryInfo<DbResource> for (Z, $($name,)*)
+            where 
+                for<'a> 
+                    (
+                        <Z as DBQueryInfo<DbResource>>::ReadOnlyItem<'a>,
+                        $(<$name as DBQueryInfo<DbResource>>::ReadOnlyItem<'a>, )*
+                    )
+                        :
+                        From<(
+                            ReadOnlyItem<'a, Z, DbResource>,
+                            $(ReadOnlyItem<'a, $name, DbResource>,)*
+                        )>
         {
             type DerefItem = (Z::DerefItem, $($name::DerefItem,)*);
             // type Mapper = NullMapper;
