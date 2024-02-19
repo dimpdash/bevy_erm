@@ -20,7 +20,10 @@ pub fn purchase_system(
     block_on(async {
         println!("Processing purchase events");
         for purchase in purchases.read() {
-            let item = item_query.get(&(purchase.item, purchase.request)).await.unwrap();
+            let item = item_query
+                .get(&(purchase.item, purchase.request))
+                .await
+                .unwrap();
             let seller_name = seller_query
                 .get(&(item.seller_id, purchase.request))
                 .await
@@ -65,7 +68,6 @@ pub fn create_tables(db: Res<AnyDatabaseResource>, _print_tables: EventWriter<Pr
         let conn = db.get_transaction(request);
         let mut guard = conn.lock().await;
         let tr = guard.a.as_mut().unwrap();
-
 
         // create the tables
         // market items table
@@ -123,7 +125,7 @@ pub fn print_items_table(
     items: DatabaseQuery<&ItemQuery>,
     mut print_table_events: EventReader<PrintTable>,
 ) {
-    block_on( async {
+    block_on(async {
         for print_table in print_table_events.read() {
             let items = items
                 .load_components::<(&DatabaseEntity, &MarketItem), ItemQueryLoadAll>(
@@ -149,8 +151,8 @@ pub fn print_purchased_items_table(
     purchased_items: DatabaseQuery<&PurchaseItemQuery>,
     mut print_table_events: EventReader<PrintTable>,
 ) {
-    block_on( async {
-            for print_table in print_table_events.read() {
+    block_on(async {
+        for print_table in print_table_events.read() {
             let purchased_items = purchased_items
                 .load_components::<(&DatabaseEntity, &PurchasedItem), PurchaseItemQueryLoadAll>(
                     print_table.request,
@@ -195,7 +197,7 @@ pub fn print_users_table(
                     )
                     .await
                     .unwrap();
-            
+
                 let sellers = sellers
                     .load_components::<(Entity, &Seller), SellerQueryLoadAll>(
                         print_table.request,

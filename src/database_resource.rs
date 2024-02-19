@@ -1,13 +1,11 @@
 use std::{
     any::TypeId,
-    ops::{Deref, DerefMut},
     sync::{Arc, RwLock},
 };
 
 use bevy_ecs::{component::ComponentId, prelude::*};
 use bevy_mod_index::index::Index;
 use futures::lock::Mutex;
-use futures::lock::MutexGuard;
 
 use futures::executor::block_on;
 use generational_arena::Arena;
@@ -74,8 +72,8 @@ unsafe impl Send for DatabaseHandle {}
 unsafe impl Sync for AnyDatabaseResource {}
 
 #[derive(Debug)]
-pub struct A{
-    pub a: Option<Transaction<'static, sqlx::Sqlite>>
+pub struct A {
+    pub a: Option<Transaction<'static, sqlx::Sqlite>>,
 }
 
 unsafe impl Send for A {}
@@ -96,19 +94,23 @@ impl DatabaseResource for AnyDatabaseResource {
     fn start_new_transaction(&self) -> RequestId {
         let mut transactions = self.db.tr.write().unwrap();
         let transaction = block_on(self.db.pool.write().unwrap().begin()).unwrap();
-        let request = transactions.insert(Arc::new(Mutex::new(A{a: Some(transaction)})));
+        let request = transactions.insert(Arc::new(Mutex::new(A {
+            a: Some(transaction),
+        })));
         RequestId(request)
     }
 
     fn try_start_new_transaction(&self) -> Option<RequestId> {
         let mut transactions = self.db.tr.write().unwrap();
         let transaction = block_on(self.db.pool.write().unwrap().try_begin()).unwrap()?;
-        let request = transactions.insert(Arc::new(Mutex::new(A{a: Some(transaction)})));
+        let request = transactions.insert(Arc::new(Mutex::new(A {
+            a: Some(transaction),
+        })));
         Some(RequestId(request))
     }
 
     fn commit_transaction(&self, request: RequestId) {
-        block_on( async {
+        block_on(async {
             let database_handle = &self.db;
             let mut arena = database_handle.tr.write().unwrap();
             let tr_lock = arena.remove(request.0).unwrap();
@@ -117,8 +119,6 @@ impl DatabaseResource for AnyDatabaseResource {
             tr.commit().await.unwrap();
         })
     }
-
-
 
     fn get_transaction(&self, request: RequestId) -> Self::Transaction {
         let database_handle = &self.db;

@@ -47,8 +47,7 @@ impl Plugin for MarketplacePlugin {
             .add_systems(Update, flush_purchase.after(purchase_system))
             .add_systems(PostUpdate, print_items_table)
             .add_systems(PostUpdate, print_users_table)
-            .add_systems(PostUpdate, print_purchased_items_table)
-            ;
+            .add_systems(PostUpdate, print_purchased_items_table);
     }
 }
 

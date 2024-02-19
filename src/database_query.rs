@@ -1,5 +1,4 @@
 use core::panic;
-use std::any::Any;
 
 use crate::*;
 use async_trait::async_trait;
@@ -15,7 +14,10 @@ use casey::lower;
 
 #[async_trait]
 pub trait CustomDatabaseQuery<DbResource: DatabaseResource, DerefItem: Send>: Sync {
-    async fn query(&self, tr: DatabaseTransaction<DbResource>) -> Result<Vec<(DatabaseEntity, DerefItem)>, ()>;
+    async fn query(
+        &self,
+        tr: DatabaseTransaction<DbResource>,
+    ) -> Result<Vec<(DatabaseEntity, DerefItem)>, ()>;
 }
 
 pub trait ReturnSelector<'w> {
@@ -60,8 +62,7 @@ pub trait DBQueryInfo<DbResource: DatabaseResource> {
         world: UnsafeWorldCell<'w>,
         db_entity: &DatabaseEntity,
         component: Self::ReadOnlyItem<'w>,
-    ) -> Result<(), ()>
-    ;
+    ) -> Result<(), ()>;
     async fn insert_component<'w>(
         db: &DbResource,
         world: UnsafeWorldCell<'w>,
@@ -75,8 +76,7 @@ pub trait DBQueryInfo<DbResource: DatabaseResource> {
         get_comp_from_db: CDQ,
     ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()>
     where
-        CDQ: CustomDatabaseQuery<DbResource, Self::DerefItem> + Send
-    ;
+        CDQ: CustomDatabaseQuery<DbResource, Self::DerefItem> + Send;
     async fn create(
         db: &DbResource,
         world: UnsafeWorldCell<'_>,
@@ -147,7 +147,7 @@ where
     }
 }
 
-pub trait DatabaseEntityWithRequest: Sync + Send{
+pub trait DatabaseEntityWithRequest: Sync + Send {
     fn request(&self) -> &RequestId;
     fn id(&self) -> &DatabaseEntityId;
 }
@@ -189,9 +189,9 @@ impl<'w, 's, Q: DBQueryInfo<DbResource>, DbResource: DatabaseResource>
         &self,
         request: RequestId,
         get_comp_from_db: CDQ,
-    ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()> 
-        where 
-            CDQ: CustomDatabaseQuery<DbResource, Q::DerefItem> + Send
+    ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()>
+    where
+        CDQ: CustomDatabaseQuery<DbResource, Q::DerefItem> + Send,
     {
         Q::load_components::<R, CDQ>(self.db.as_ref(), self.world, request, get_comp_from_db).await
     }
@@ -303,9 +303,9 @@ pub trait ReadMarker<DbResource: DatabaseResource>: DBQueryInfo<DbResource> {}
 // &, &mut, Option
 pub trait TupleMarker<DbResource: DatabaseResource>: DBQueryInfo<DbResource> {}
 
-impl<T: DBQueryInfo<DbResource>, DbResource: DatabaseResource> TupleMarker<DbResource>
-    for Option<T>
-    where for<'a> Option<<T as DBQueryInfo<DbResource>>::ReadOnlyItem<'a>>: From<Option<ReadOnlyItem<'a, T, DbResource>>>
+impl<T: DBQueryInfo<DbResource>, DbResource: DatabaseResource> TupleMarker<DbResource> for Option<T> where
+    for<'a> Option<<T as DBQueryInfo<DbResource>>::ReadOnlyItem<'a>>:
+        From<Option<ReadOnlyItem<'a, T, DbResource>>>
 {
 }
 
@@ -313,12 +313,11 @@ async fn f() {
     panic!()
 }
 
-
 #[async_trait]
-impl<T: DBQueryInfo<DbResource>, DbResource: DatabaseResource> DBQueryInfo<DbResource>
-    for Option<T>
-
-    where for<'a> Option<<T as DBQueryInfo<DbResource>>::ReadOnlyItem<'a>>: From<Option<ReadOnlyItem<'a, T, DbResource>>>
+impl<T: DBQueryInfo<DbResource>, DbResource: DatabaseResource> DBQueryInfo<DbResource> for Option<T>
+where
+    for<'a> Option<<T as DBQueryInfo<DbResource>>::ReadOnlyItem<'a>>:
+        From<Option<ReadOnlyItem<'a, T, DbResource>>>,
 {
     type DerefItem = Option<<T as DBQueryInfo<DbResource>>::DerefItem>;
 
@@ -373,13 +372,13 @@ impl<T: DBQueryInfo<DbResource>, DbResource: DatabaseResource> DBQueryInfo<DbRes
     }
 
     async fn load_components<'w, R: ReturnSelector<'w>, CDQ>(
-        db: &DbResource,
-        world: UnsafeWorldCell<'w>,
-        request: RequestId,
-        get_comp_from_db: CDQ,
+        _db: &DbResource,
+        _world: UnsafeWorldCell<'w>,
+        _request: RequestId,
+        _get_comp_from_db: CDQ,
     ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()>
     where
-        CDQ: CustomDatabaseQuery<DbResource, Self::DerefItem> + Send
+        CDQ: CustomDatabaseQuery<DbResource, Self::DerefItem> + Send,
     {
         Err(())
     }
@@ -448,7 +447,8 @@ where
         db_entity: &DatabaseEntity,
         component: Self::ReadOnlyItem<'w>,
     ) -> Result<(), ()> {
-        SingleComponentRetriever::<T, DbResource>::update_component(db, world, db_entity, component).await
+        SingleComponentRetriever::<T, DbResource>::update_component(db, world, db_entity, component)
+            .await
     }
 
     async fn insert_component<'w>(
@@ -457,7 +457,8 @@ where
         db_entity: &DatabaseEntity,
         component: Self::ReadOnlyItem<'w>,
     ) -> Result<(), ()> {
-        SingleComponentRetriever::<T, DbResource>::insert_component(db, world, db_entity, component).await
+        SingleComponentRetriever::<T, DbResource>::insert_component(db, world, db_entity, component)
+            .await
     }
 
     async fn load_components<'w, R: ReturnSelector<'w>, CDQ>(
@@ -467,14 +468,15 @@ where
         get_comp_from_db: CDQ,
     ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()>
     where
-        CDQ: CustomDatabaseQuery<DbResource, Self::DerefItem> + Send 
+        CDQ: CustomDatabaseQuery<DbResource, Self::DerefItem> + Send,
     {
         SingleComponentRetriever::<T, DbResource>::load_components::<R, CDQ>(
             db,
             world,
             request,
             get_comp_from_db,
-        ).await
+        )
+        .await
     }
 
     async fn create(
@@ -530,7 +532,8 @@ where
         db_entity: &DatabaseEntity,
         component: Self::ReadOnlyItem<'w>,
     ) -> Result<(), ()> {
-        SingleComponentRetriever::<T, DbResource>::update_component(db, world, db_entity, component).await
+        SingleComponentRetriever::<T, DbResource>::update_component(db, world, db_entity, component)
+            .await
     }
 
     async fn insert_component<'w>(
@@ -539,7 +542,8 @@ where
         db_entity: &DatabaseEntity,
         component: Self::ReadOnlyItem<'w>,
     ) -> Result<(), ()> {
-        SingleComponentRetriever::<T, DbResource>::insert_component(db, world, db_entity, component).await
+        SingleComponentRetriever::<T, DbResource>::insert_component(db, world, db_entity, component)
+            .await
     }
 
     async fn load_components<'w, R: ReturnSelector<'w>, CDQ>(
@@ -549,14 +553,15 @@ where
         get_comp_from_db: CDQ,
     ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()>
     where
-        CDQ: CustomDatabaseQuery<DbResource, Self::DerefItem> + Send 
+        CDQ: CustomDatabaseQuery<DbResource, Self::DerefItem> + Send,
     {
         SingleComponentRetriever::<T, DbResource>::load_components::<R, CDQ>(
             db,
             world,
             request,
             get_comp_from_db,
-        ).await
+        )
+        .await
     }
 
     async fn create(
@@ -580,8 +585,8 @@ macro_rules! simple_composition_of_db_queries {
         // looks quite ugly but it works
         #[async_trait]
         impl<Z: TupleMarker<DbResource>, $($name: TupleMarker<DbResource>, )* DbResource: DatabaseResource> DBQueryInfo<DbResource> for (Z, $($name,)*)
-            where 
-                for<'a> 
+            where
+                for<'a>
                     (
                         <Z as DBQueryInfo<DbResource>>::ReadOnlyItem<'a>,
                         $(<$name as DBQueryInfo<DbResource>>::ReadOnlyItem<'a>, )*
@@ -648,7 +653,7 @@ macro_rules! simple_composition_of_db_queries {
                 _world: UnsafeWorldCell<'w>,
                 _request: RequestId,
                 _get_comp_from_db: CDQ
-            ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()> 
+            ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()>
             where
                 CDQ: CustomDatabaseQuery<DbResource, Self::DerefItem> + Send
             {
@@ -688,7 +693,8 @@ pub struct SingleComponentRetriever<Mapper, DbResource> {
     phantom: std::marker::PhantomData<(Mapper, DbResource)>,
 }
 
-impl<'a,
+impl<
+        'a,
         MyMapper: ComponentMapper,
         DbResource: DatabaseResource<Transaction = <MyMapper as ComponentMapper>::Executor>,
     > SingleComponentRetriever<MyMapper, DbResource>
@@ -770,10 +776,10 @@ where
         db: &DbResource,
         world: UnsafeWorldCell<'_>,
         request: RequestId,
-        get_comp_from_db: CDQ
-    ) -> Result<Vec<Entity>, ()> 
-        where 
-        CDQ: CustomDatabaseQuery<DbResource, <MyMapper as ComponentMapper>::Component>
+        get_comp_from_db: CDQ,
+    ) -> Result<Vec<Entity>, ()>
+    where
+        CDQ: CustomDatabaseQuery<DbResource, <MyMapper as ComponentMapper>::Component>,
     {
         let components = {
             let tr = db.get_transaction(request);
@@ -887,11 +893,7 @@ where
     ) -> Result<(), ()> {
         let mut tr = db.get_transaction(*db_entity.request());
 
-        MyMapper::update_component(
-            &mut tr,
-            db_entity.id(),
-            component,
-        ).await
+        MyMapper::update_component(&mut tr, db_entity.id(), component).await
     }
 
     async fn insert_component<'w>(
@@ -901,11 +903,7 @@ where
         component: ReadOnlyItem<'w, Self, DbResource>,
     ) -> Result<(), ()> {
         let mut tr = db.get_transaction(*db_entity.request());
-        MyMapper::insert_component(
-            &mut tr,
-            db_entity.id(),
-            component,
-        ).await
+        MyMapper::insert_component(&mut tr, db_entity.id(), component).await
     }
 
     async fn load_components<'w, R: ReturnSelector<'w>, CDQ>(
@@ -915,9 +913,10 @@ where
         get_comp_from_db: CDQ,
     ) -> Result<Vec<<R as ReturnSelector<'w>>::ReturnItem>, ()>
     where
-        CDQ: CustomDatabaseQuery<DbResource, Self::DerefItem> + Send 
+        CDQ: CustomDatabaseQuery<DbResource, Self::DerefItem> + Send,
     {
-        let entities = Self::load_entities_for_components::<CDQ>(db, world, request, get_comp_from_db).await?;
+        let entities =
+            Self::load_entities_for_components::<CDQ>(db, world, request, get_comp_from_db).await?;
 
         let components = R::load_components_from_entities(world, entities);
         Ok(components)

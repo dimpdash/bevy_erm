@@ -1,13 +1,14 @@
 #![feature(async_closure)]
 
-use std::borrow::BorrowMut;
-
 use async_trait::async_trait;
-use bevy_erm::{database_query::{CustomDatabaseQuery, DatabaseTransaction}, *};
+use bevy_erm::{
+    database_query::{CustomDatabaseQuery, DatabaseTransaction},
+    *,
+};
 
 use crate::components::*;
-use futures::executor::block_on;
-use sqlx::{Row, Transaction};
+
+use sqlx::Row;
 
 pub struct BuyerQuery {}
 
@@ -15,11 +16,16 @@ pub struct BuyerQueryLoadAll(pub RequestId);
 
 #[async_trait]
 impl CustomDatabaseQuery<AnyDatabaseResource, Buyer> for BuyerQueryLoadAll {
-    async fn query(&self, tr: DatabaseTransaction<AnyDatabaseResource>) -> Result<Vec<(DatabaseEntity, Buyer)>, ()> {
+    async fn query(
+        &self,
+        tr: DatabaseTransaction<AnyDatabaseResource>,
+    ) -> Result<Vec<(DatabaseEntity, Buyer)>, ()> {
         let mut guard = tr.lock().await;
         let tr = guard.a.as_mut().unwrap();
-        let buyers =
-            sqlx::query("SELECT id FROM users WHERE buyer = 1").fetch_all(&mut **tr).await.unwrap();
+        let buyers = sqlx::query("SELECT id FROM users WHERE buyer = 1")
+            .fetch_all(&mut **tr)
+            .await
+            .unwrap();
 
         let buyers = buyers
             .into_iter()
@@ -105,17 +111,20 @@ impl ComponentMapper for BuyerQuery {
     // }
 }
 
-
 pub struct UserQueryLoadAll(pub RequestId);
-
 
 #[async_trait]
 impl CustomDatabaseQuery<AnyDatabaseResource, User> for UserQueryLoadAll {
-    async fn query(&self, tr: DatabaseTransaction<AnyDatabaseResource>) -> Result<Vec<(DatabaseEntity, User)>, ()> {
+    async fn query(
+        &self,
+        tr: DatabaseTransaction<AnyDatabaseResource>,
+    ) -> Result<Vec<(DatabaseEntity, User)>, ()> {
         let mut guard = tr.lock().await;
         let tr = guard.a.as_mut().unwrap();
-        let users =
-            sqlx::query("SELECT id, name FROM users").fetch_all(&mut **tr).await.unwrap();
+        let users = sqlx::query("SELECT id, name FROM users")
+            .fetch_all(&mut **tr)
+            .await
+            .unwrap();
 
         let users = users
             .into_iter()
@@ -136,9 +145,7 @@ impl CustomDatabaseQuery<AnyDatabaseResource, User> for UserQueryLoadAll {
             .collect();
 
         Ok(users)
-    
     }
-
 }
 pub struct UserQuery {}
 
@@ -168,7 +175,7 @@ impl ComponentMapper for UserQuery {
     ) -> Result<(), ()> {
         let mut guard = tr.lock().await;
         let tr = guard.a.as_mut().unwrap();
-        
+
         let r = sqlx::query("UPDATE users SET name = ? WHERE id = ?")
             .bind(component.name.clone())
             .bind(db_entity)
@@ -219,11 +226,16 @@ pub struct SellerQuery {}
 pub struct SellerQueryLoadAll(pub RequestId);
 #[async_trait]
 impl CustomDatabaseQuery<AnyDatabaseResource, Seller> for SellerQueryLoadAll {
-    async fn query(&self, tr: DatabaseTransaction<AnyDatabaseResource>) -> Result<Vec<(DatabaseEntity, Seller)>, ()> {
+    async fn query(
+        &self,
+        tr: DatabaseTransaction<AnyDatabaseResource>,
+    ) -> Result<Vec<(DatabaseEntity, Seller)>, ()> {
         let mut guard = tr.lock().await;
         let tr = guard.a.as_mut().unwrap();
-        let sellers =
-            sqlx::query("SELECT id FROM users WHERE seller = 1").fetch_all(&mut **tr).await.unwrap();
+        let sellers = sqlx::query("SELECT id FROM users WHERE seller = 1")
+            .fetch_all(&mut **tr)
+            .await
+            .unwrap();
 
         let sellers = sellers
             .into_iter()
@@ -243,9 +255,7 @@ impl CustomDatabaseQuery<AnyDatabaseResource, Seller> for SellerQueryLoadAll {
             .collect();
 
         Ok(sellers)
-    
     }
-
 }
 
 #[async_trait]
@@ -259,7 +269,7 @@ impl ComponentMapper for SellerQuery {
     ) -> Result<Self::Component, ()> {
         let mut guard = tr.lock().await;
         let tr = guard.a.as_mut().unwrap();
-        
+
         let seller_bool = sqlx::query("SELECT seller FROM users WHERE id = ?")
             .bind(db_entity)
             .fetch_one(&mut **tr)
@@ -285,7 +295,7 @@ impl ComponentMapper for SellerQuery {
     ) -> Result<(), ()> {
         let mut guard = tr.lock().await;
         let tr = guard.a.as_mut().unwrap();
-        
+
         let r = sqlx::query("UPDATE users SET seller = 1 WHERE id = ?")
             .bind(db_entity)
             .execute(&mut **tr)
@@ -318,11 +328,16 @@ pub struct ItemQuery {}
 pub struct ItemQueryLoadAll(pub RequestId);
 #[async_trait]
 impl CustomDatabaseQuery<AnyDatabaseResource, MarketItem> for ItemQueryLoadAll {
-    async fn query(&self, tr: DatabaseTransaction<AnyDatabaseResource>) -> Result<Vec<(DatabaseEntity, MarketItem)>, ()> {
+    async fn query(
+        &self,
+        tr: DatabaseTransaction<AnyDatabaseResource>,
+    ) -> Result<Vec<(DatabaseEntity, MarketItem)>, ()> {
         let mut guard = tr.lock().await;
         let tr = guard.a.as_mut().unwrap();
-        let items =
-            sqlx::query("SELECT id, seller_id, name, price FROM items").fetch_all(&mut **tr).await.unwrap();
+        let items = sqlx::query("SELECT id, seller_id, name, price FROM items")
+            .fetch_all(&mut **tr)
+            .await
+            .unwrap();
 
         let items = items
             .into_iter()
@@ -349,9 +364,7 @@ impl CustomDatabaseQuery<AnyDatabaseResource, MarketItem> for ItemQueryLoadAll {
             .collect();
 
         Ok(items)
-    
     }
-
 }
 
 #[async_trait]
@@ -365,7 +378,7 @@ impl ComponentMapper for ItemQuery {
     ) -> Result<Self::Component, ()> {
         let mut guard = tr.lock().await;
         let tr = guard.a.as_mut().unwrap();
-        
+
         let item = sqlx::query_as::<_, MarketItem>("SELECT * FROM items WHERE id = ?")
             .bind(db_entity)
             .fetch_one(&mut **tr)
@@ -435,11 +448,16 @@ pub struct PurchaseItemQuery {}
 pub struct PurchaseItemQueryLoadAll(pub RequestId);
 #[async_trait]
 impl CustomDatabaseQuery<AnyDatabaseResource, PurchasedItem> for PurchaseItemQueryLoadAll {
-    async fn query(&self, tr: DatabaseTransaction<AnyDatabaseResource>) -> Result<Vec<(DatabaseEntity, PurchasedItem)>, ()> {
+    async fn query(
+        &self,
+        tr: DatabaseTransaction<AnyDatabaseResource>,
+    ) -> Result<Vec<(DatabaseEntity, PurchasedItem)>, ()> {
         let mut guard = tr.lock().await;
         let tr = guard.a.as_mut().unwrap();
-        let items =
-            sqlx::query("SELECT id, item, buyer FROM purchased_items").fetch_all(&mut **tr).await.unwrap();
+        let items = sqlx::query("SELECT id, item, buyer FROM purchased_items")
+            .fetch_all(&mut **tr)
+            .await
+            .unwrap();
 
         let items = items
             .into_iter()
@@ -461,9 +479,7 @@ impl CustomDatabaseQuery<AnyDatabaseResource, PurchasedItem> for PurchaseItemQue
             .collect();
 
         Ok(items)
-    
     }
-
 }
 
 #[async_trait]
@@ -477,7 +493,7 @@ impl ComponentMapper for PurchaseItemQuery {
     ) -> Result<Self::Component, ()> {
         let mut guard = tr.lock().await;
         let tr = guard.a.as_mut().unwrap();
-        
+
         let item =
             sqlx::query_as::<_, PurchasedItem>("SELECT item FROM purchased_items WHERE id = ?")
                 .bind(db_entity)
