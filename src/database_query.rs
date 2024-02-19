@@ -766,15 +766,14 @@ where
             get_comp_from_db(&mut tr)?
         };
 
-        // let entities = components
-        //     .into_iter()
-        //     .map(|(db_entity, component)| async {
-        //         block_on(Self::get_internal(db, world, &db_entity, Some(component)))
-        //     })
-        //     .collect::<Vec<Entity>>();
-        todo!();
+        let entities = components
+            .into_iter()
+            .map(|(db_entity, component)| {
+                block_on(Self::get_internal(db, world, &db_entity, Some(component)))
+            })
+            .collect::<Vec<Entity>>();
 
-        // Ok(entities)
+        Ok(entities)
     }
 
     pub async fn update_or_insert_component(
