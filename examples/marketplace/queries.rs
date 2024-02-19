@@ -1,5 +1,3 @@
-#![feature(async_closure)]
-
 use async_trait::async_trait;
 use bevy_erm::{
     database_query::{CustomDatabaseQuery, DatabaseTransaction},
