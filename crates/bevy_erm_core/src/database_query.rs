@@ -309,10 +309,6 @@ impl<T: DBQueryInfo<DbResource>, DbResource: DatabaseResource> TupleMarker<DbRes
 {
 }
 
-async fn f() {
-    panic!()
-}
-
 #[async_trait]
 impl<T: DBQueryInfo<DbResource>, DbResource: DatabaseResource> DBQueryInfo<DbResource> for Option<T>
 where

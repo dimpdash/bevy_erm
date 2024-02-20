@@ -1,6 +1,6 @@
 [package]
 edition = "2021"
-name = "bevy_erm"
+name = "bevy_erm_core"
 version = "0.0.1"
 description = "A entity relational mapper"
 readme = "README.md"
@@ -14,11 +14,6 @@ license = "Apache-2.0"
 
 [[examples]]
 name = "marketplace"
-
-members = [ 
-    "crates/bevy_erm_core",
-    "crates/bevy_erm_derive",
-]
 
 
 [dependencies]
@@ -34,8 +29,6 @@ generational-arena = "0.2.9"
 bevy_reflect = "0.12.1"
 bevy_ecs_macros = "0.12.1"
 bevy_utils = "0.12.1"
-bevy_erm_core = {path = "./crates/bevy_erm_core" }
-bevy_erm_derive = {path = "./crates/bevy_erm_derive" }
 
 [dev-dependencies]
 prettytable-rs = "0.10.0"

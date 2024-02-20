@@ -281,6 +281,8 @@ dependencies = [
  "bevy_app",
  "bevy_ecs",
  "bevy_ecs_macros",
+ "bevy_erm_core",
+ "bevy_erm_derive",
  "bevy_mod_index",
  "bevy_reflect",
  "bevy_utils",
@@ -291,6 +293,28 @@ dependencies = [
  "sqlx",
  "tokio",
 ]
+
+[[package]]
+name = "bevy_erm_core"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "bevy_app",
+ "bevy_ecs",
+ "bevy_ecs_macros",
+ "bevy_mod_index",
+ "bevy_reflect",
+ "bevy_utils",
+ "casey",
+ "futures",
+ "generational-arena",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
+name = "bevy_erm_derive"
+version = "0.1.0"
 
 [[package]]
 name = "bevy_hierarchy"
