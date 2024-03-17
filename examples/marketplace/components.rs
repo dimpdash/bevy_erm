@@ -6,7 +6,8 @@ use tokio::main;
 use async_trait::async_trait;
 use sqlx;
 
-#[derive(Component, Debug, Default, Clone, sqlx::FromRow)]
+#[derive(Component, Debug, Default, Clone, sqlx::FromRow, DBQueryDerive)]
+#[table_name = "users"]
 pub struct User {
     #[allow(dead_code)]
     pub name: String,

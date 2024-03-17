@@ -11,7 +11,7 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use bevy_erm::*;
 
-use components::{MarketItem, PurchasedItem};
+use components::*;
 use events::*;
 use queries::*;
 use resources::*;
@@ -26,7 +26,7 @@ impl Plugin for MarketplacePlugin {
                 PostUpdate,
                 flush_component_to_db::<
                     (
-                        Option<&UserQuery>,
+                        Option<&User>,
                         Option<&PurchasedItem>,
                         Option<&BuyerQuery>,
                         Option<&SellerQuery>,

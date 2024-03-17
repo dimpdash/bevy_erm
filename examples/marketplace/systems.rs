@@ -13,8 +13,8 @@ pub fn purchase_system(
     mut purchases: EventReader<Purchase>,
     db_query_purchased: DatabaseQuery<&PurchasedItem>,
     item_query: DatabaseQuery<&MarketItem>,
-    purchaser_query: DatabaseQuery<&UserQuery>,
-    seller_query: DatabaseQuery<&UserQuery>,
+    purchaser_query: DatabaseQuery<&User>,
+    seller_query: DatabaseQuery<&User>,
     mut response: EventWriter<PurchaseResponse>,
 ) {
     block_on(async {
@@ -174,7 +174,7 @@ pub fn print_purchased_items_table(
 }
 
 pub fn print_users_table(
-    users: DatabaseQuery<&UserQuery>,
+    users: DatabaseQuery<&User>,
     buyers: DatabaseQuery<&BuyerQuery>,
     sellers: DatabaseQuery<&SellerQuery>,
     mut print_table_events: EventReader<PrintTable>,
