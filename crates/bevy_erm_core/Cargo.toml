@@ -20,7 +20,6 @@ name = "marketplace"
 async-trait = "0.1.77"
 bevy_ecs = "0.12.1"
 bevy_mod_index = "0.3.0"
-bevy_app = "0.12.1"
 casey = "0.4.0"
 futures = "0.3.30"
 sqlx = { version = "0.7.3", features = ["sqlite", "runtime-tokio"] }

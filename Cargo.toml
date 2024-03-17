@@ -15,10 +15,6 @@ license = "Apache-2.0"
 [[examples]]
 name = "marketplace"
 
-members = [ 
-    "crates/bevy_erm_core",
-    "crates/bevy_erm_derive",
-]
 
 
 [dependencies]

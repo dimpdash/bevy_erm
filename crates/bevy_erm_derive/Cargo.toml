@@ -6,3 +6,20 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+async-trait = "0.1.78"
+bevy_erm_core = {path = "../bevy_erm_core" }
+quote = "1.0.35"
+syn = "2.0.50"
+sqlx = { version = "0.7.3", features = ["sqlite", "runtime-tokio"] }
+
+[lib]
+proc-macro = true
+
+
+# Enable a small amount of optimization in debug mode
+[profile.dev]
+opt-level = 1
+
+# Enable high optimizations for dependencies (incl. Bevy), but not for our code:
+[profile.dev.package."*"]
+opt-level = 3

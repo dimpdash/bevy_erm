@@ -11,8 +11,8 @@ use futures::executor::block_on;
 
 pub fn purchase_system(
     mut purchases: EventReader<Purchase>,
-    db_query_purchased: DatabaseQuery<&PurchaseItemQuery>,
-    item_query: DatabaseQuery<&ItemQuery>,
+    db_query_purchased: DatabaseQuery<&PurchasedItem>,
+    item_query: DatabaseQuery<&MarketItem>,
     purchaser_query: DatabaseQuery<&UserQuery>,
     seller_query: DatabaseQuery<&UserQuery>,
     mut response: EventWriter<PurchaseResponse>,
@@ -122,7 +122,7 @@ pub fn create_tables(db: Res<AnyDatabaseResource>, _print_tables: EventWriter<Pr
 }
 
 pub fn print_items_table(
-    items: DatabaseQuery<&ItemQuery>,
+    items: DatabaseQuery<&MarketItem>,
     mut print_table_events: EventReader<PrintTable>,
 ) {
     block_on(async {
@@ -148,7 +148,7 @@ pub fn print_items_table(
 }
 
 pub fn print_purchased_items_table(
-    purchased_items: DatabaseQuery<&PurchaseItemQuery>,
+    purchased_items: DatabaseQuery<&PurchasedItem>,
     mut print_table_events: EventReader<PrintTable>,
 ) {
     block_on(async {

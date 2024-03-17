@@ -1,0 +1,7 @@
+{
+    "rust-analyzer.linkedProjects": [
+        "crates\\bevy_erm_core\\Cargo.toml",
+        "crates\\bevy_erm_derive\\Cargo.toml",
+        "Cargo.toml"
+    ]
+}

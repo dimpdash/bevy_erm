@@ -1,6 +1,10 @@
 use bevy_ecs::component::Component;
 use bevy_erm::*;
+use bevy_erm_derive::DBQueryDerive;
 use sqlx::{FromRow, Row};
+use tokio::main;
+use async_trait::async_trait;
+use sqlx;
 
 #[derive(Component, Debug, Default, Clone, sqlx::FromRow)]
 pub struct User {
@@ -14,7 +18,8 @@ pub struct Seller {}
 #[derive(Component, Debug, Default, Clone, sqlx::FromRow)]
 pub struct Buyer {}
 
-#[derive(Component, Debug, Default, Clone)]
+#[derive(Component, Debug, Default, Clone, DBQueryDerive)]
+#[table_name = "items"]
 pub struct MarketItem {
     pub seller_id: DatabaseEntityId,
     pub name: String,
@@ -31,7 +36,8 @@ impl FromRow<'_, sqlx::sqlite::SqliteRow> for MarketItem {
     }
 }
 
-#[derive(Component, Debug, Default, Clone)]
+#[derive(Component, Debug, Default, Clone, DBQueryDerive)]
+#[table_name = "purchased_items"]
 pub struct PurchasedItem {
     pub item: DatabaseEntityId,
     pub buyer: DatabaseEntityId,
