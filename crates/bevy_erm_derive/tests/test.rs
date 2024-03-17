@@ -4,6 +4,8 @@ mod tests {
     use bevy_erm_derive::DBQueryDerive;
     use bevy_erm_core::ComponentMapper;
     use sqlx::prelude::FromRow;
+    use async_trait::async_trait;
+    use sqlx;
 
 
     pub trait Easy {
