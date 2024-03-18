@@ -296,6 +296,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bevy_erm_core",
+ "casey",
  "quote",
  "sqlx",
  "syn 2.0.50",

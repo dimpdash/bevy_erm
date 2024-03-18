@@ -11,6 +11,7 @@ bevy_erm_core = {path = "../bevy_erm_core" }
 quote = "1.0.35"
 syn = "2.0.50"
 sqlx = { version = "0.7.3", features = ["sqlite", "runtime-tokio"] }
+casey = "0.4.0"
 
 [lib]
 proc-macro = true

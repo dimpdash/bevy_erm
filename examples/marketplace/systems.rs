@@ -175,8 +175,8 @@ pub fn print_purchased_items_table(
 
 pub fn print_users_table(
     users: DatabaseQuery<&User>,
-    buyers: DatabaseQuery<&BuyerQuery>,
-    sellers: DatabaseQuery<&SellerQuery>,
+    buyers: DatabaseQuery<&Buyer>,
+    sellers: DatabaseQuery<&Seller>,
     mut print_table_events: EventReader<PrintTable>,
 ) {
     block_on(async {

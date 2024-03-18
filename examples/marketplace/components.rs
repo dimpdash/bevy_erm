@@ -13,10 +13,12 @@ pub struct User {
     pub name: String,
 }
 
-#[derive(Component, Debug, Default, Clone, sqlx::FromRow)]
+#[derive(Component, Debug, Default, Clone, sqlx::FromRow, DBQueryDerive)]
+#[table_name = "users"]
 pub struct Seller {}
 
-#[derive(Component, Debug, Default, Clone, sqlx::FromRow)]
+#[derive(Component, Debug, Default, Clone, sqlx::FromRow, DBQueryDerive)]
+#[table_name = "users"]
 pub struct Buyer {}
 
 #[derive(Component, Debug, Default, Clone, DBQueryDerive)]

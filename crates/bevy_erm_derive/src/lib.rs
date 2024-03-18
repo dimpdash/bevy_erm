@@ -4,6 +4,7 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote}; 
 use syn::{self, DeriveInput, DataStruct, Data, Ident};
 use bevy_erm_core::{ComponentMapper, DatabaseResource, AnyDatabaseResource};
+use casey::lower;
 
 #[proc_macro_derive(DBQueryDerive, attributes(main_key, table_name))]
 pub fn query_derive(input: TokenStream) -> TokenStream {
@@ -14,16 +15,95 @@ pub fn query_derive(input: TokenStream) -> TokenStream {
     // Parse the input tokens into a syntax tree
     let ast: DeriveInput = syn::parse(input).expect("Failed to parse input");
 
-    // Extract necessary information from the input
-    let ident = &ast.ident;
-
-
-
-    let Data::Struct(data) = ast.data else {
+    let Data::Struct(ref data) = ast.data else {
         panic!("This derive macro only supports structs");
     };
+    
+    if data.fields.is_empty() {
+        marker_component(&ast, data)
+    } else {
+        full_component(&ast, &data)
+    }
 
-    let table_name_meta = ast.attrs.iter().find(|attr| attr.path().is_ident("table_name")).unwrap().clone().meta;
+}
+
+fn marker_component(ast: &DeriveInput, data : &DataStruct) -> TokenStream {
+    let ident = &ast.ident;
+
+    println!("here2");
+
+    let table_name = get_table_name(ast);
+    println!("here3");
+    let main_key_field = get_main_key(ast);
+
+    println!("here");
+    let selection_query = format!("SELECT {} FROM {} WHERE {} = ?", lower!(ident), table_name, main_key_field.to_string());
+
+    let update_query = format!("UPDATE {} SET {} = ? WHERE {} = ?", table_name, lower!(ident), main_key_field.to_string());
+
+    let gen = quote! {
+        use bevy_erm_core::*;
+
+        #[async_trait]
+        impl ComponentMapper for #ident {
+            type Component = #ident;
+            type Executor = <bevy_erm_core::AnyDatabaseResource as DatabaseResource>::Transaction;
+        
+            async fn get<'c>(
+                e: &mut Self::Executor,
+                db_entity: &DatabaseEntityId,
+            ) -> Result<Self::Component, ()> {
+                let mut guard = e.lock().await;
+                let tr = guard.a.as_mut().unwrap();
+
+                let marker_bool = sqlx::query(#selection_query)
+                    .bind(db_entity)
+                    .fetch_one(&mut **tr)
+                    .await;
+
+                match marker_bool {
+                    Ok(_) => Ok(#ident {}),
+                    Err(_) => Err(()),
+                }
+            }
+        
+            async fn update_component<'c>(
+                tr: &mut Self::Executor,
+                db_entity: &DatabaseEntityId,
+                component: &Self::Component,
+            ) -> Result<(), ()> {
+                // Can't really imaging that this is ever called for a marker component
+                Ok(())
+            }
+        
+            async fn insert_component<'c>(
+                tr: &mut Self::Executor,
+                db_entity: &DatabaseEntityId,
+                component: &Self::Component,
+            ) -> Result<(), ()> {
+                let mut guard = tr.lock().await;
+                let tr = guard.a.as_mut().unwrap();
+
+                let r = sqlx::query(#update_query)
+                    .bind(true)
+                    .bind(db_entity)
+                    .execute(&mut **tr)
+                    .await;
+                
+                match r {
+                    Ok(_) => Ok(()),
+                    Err(_) => Err(()),
+                }
+            }
+        }
+    };
+
+    gen.into()
+}
+
+fn get_table_name(ast: &DeriveInput) -> String {
+    
+    let table_name_meta = ast.attrs.iter().find(|attr| attr.path().is_ident("table_name")).expect("No table name provided").clone().meta;
     let syn::Meta::NameValue(name_value) = table_name_meta else {
         panic!("table_name attribute must be a name value pair");
     };
@@ -39,14 +119,28 @@ pub fn query_derive(input: TokenStream) -> TokenStream {
 
     let table_name = table_name.value();
 
+    table_name
+}
 
+fn get_main_key(_ast: &DeriveInput) -> Ident {
+    let main_key_field = syn::parse_str::<Ident>("id").unwrap();
+
+    main_key_field
+}
+
+fn full_component(ast: &DeriveInput, data : &DataStruct) -> TokenStream {
+    
+    // Extract necessary information from the input
+    let ident = &ast.ident;
+
+    let table_name = get_table_name(ast);
 
     // Iterate through the fields of the struct
     // let main_key_field =
     //     data.fields.iter().find(
     //         |field| field.attrs.iter().find(|attr| attr.path().is_ident("main_key")).is_some()).unwrap().clone().ident.unwrap();
 
-    let main_key_field = syn::parse_str::<Ident>("id").unwrap();
+    let main_key_field = get_main_key(ast);
 
 
     let field_names : Vec<String> = data.fields.iter()

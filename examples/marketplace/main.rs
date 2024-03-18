@@ -28,8 +28,8 @@ impl Plugin for MarketplacePlugin {
                     (
                         Option<&User>,
                         Option<&PurchasedItem>,
-                        Option<&BuyerQuery>,
-                        Option<&SellerQuery>,
+                        Option<&Buyer>,
+                        Option<&Seller>,
                         Option<&MarketItem>,
                     ),
                     AnyDatabaseResource,

@@ -56,7 +56,7 @@ impl ComponentMapper for BuyerQuery {
         db_entity: &DatabaseEntityId,
     ) -> Result<Self::Component, ()> {
         let mut guard = tr.lock().await;
-        let tr = guard.a.as_mut().unwrap();
+        let tr: &mut sqlx::Transaction<'_, sqlx::Sqlite> = guard.a.as_mut().unwrap();
         let buyer_bool = sqlx::query("SELECT buyer FROM users WHERE id = ?")
             .bind(db_entity)
             .fetch_one(&mut **tr)
