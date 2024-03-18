@@ -128,9 +128,9 @@ pub fn print_items_table(
     block_on(async {
         for print_table in print_table_events.read() {
             let items = items
-                .load_components::<(&DatabaseEntity, &MarketItem), ItemQueryLoadAll>(
+                .load_components::<(&DatabaseEntity, &MarketItem), MarketItemQueryLoadAll>(
                     print_table.request,
-                    ItemQueryLoadAll(print_table.request),
+                    MarketItemQueryLoadAll(print_table.request),
                 )
                 .await
                 .unwrap();
@@ -154,9 +154,9 @@ pub fn print_purchased_items_table(
     block_on(async {
         for print_table in print_table_events.read() {
             let purchased_items = purchased_items
-                .load_components::<(&DatabaseEntity, &PurchasedItem), PurchaseItemQueryLoadAll>(
+                .load_components::<(&DatabaseEntity, &PurchasedItem), PurchasedItemQueryLoadAll>(
                     print_table.request,
-                    PurchaseItemQueryLoadAll(print_table.request),
+                    PurchasedItemQueryLoadAll(print_table.request),
                 )
                 .await
                 .unwrap();

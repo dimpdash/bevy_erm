@@ -6,7 +6,7 @@ mod tests {
     use sqlx::prelude::FromRow;
     use async_trait::async_trait;
     use sqlx;
-
+    use bevy_erm_core::database_query::{CustomDatabaseQuery, DatabaseTransaction};
 
     pub trait Easy {
         fn easy(&self) -> i32;

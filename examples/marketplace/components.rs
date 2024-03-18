@@ -5,6 +5,7 @@ use sqlx::{FromRow, Row};
 use tokio::main;
 use async_trait::async_trait;
 use sqlx;
+use bevy_erm_core::database_query::{CustomDatabaseQuery, DatabaseTransaction};
 
 #[derive(Component, Debug, Default, Clone, sqlx::FromRow, DBQueryDerive)]
 #[table_name = "users"]

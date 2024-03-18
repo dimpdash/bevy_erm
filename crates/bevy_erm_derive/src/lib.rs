@@ -6,6 +6,8 @@ use syn::{self, DeriveInput, DataStruct, Data, Ident};
 use bevy_erm_core::{ComponentMapper, DatabaseResource, AnyDatabaseResource};
 use casey::lower;
 
+
+
 #[proc_macro_derive(DBQueryDerive, attributes(main_key, table_name))]
 pub fn query_derive(input: TokenStream) -> TokenStream {
     //TODO fix assumptions
@@ -141,7 +143,7 @@ fn full_component(ast: &DeriveInput, data : &DataStruct) -> TokenStream {
     //         |field| field.attrs.iter().find(|attr| attr.path().is_ident("main_key")).is_some()).unwrap().clone().ident.unwrap();
 
     let main_key_field = get_main_key(ast);
-
+ 
 
     let field_names : Vec<String> = data.fields.iter()
     .filter( |field| field.ident != Some(main_key_field.clone()))
@@ -168,6 +170,10 @@ fn full_component(ast: &DeriveInput, data : &DataStruct) -> TokenStream {
         #(.bind(component.#binds.clone()))*
     };
 
+    let load_all_struct = format_ident!("{}QueryLoadAll", ident);
+    let load_all_query = format!("SELECT {}, {} FROM {}", main_key_field.to_string(), selection_terms, table_name);
+
+
     println!("{}", update_query);
     println!("{}", binds);
 
@@ -175,6 +181,8 @@ fn full_component(ast: &DeriveInput, data : &DataStruct) -> TokenStream {
     let question_marks = field_names.iter().map(|_| "?").collect::<Vec<&str>>().join(", ");
     let insert_query = format!("INSERT INTO {} ({}, {}) VALUES (?,{})", table_name, main_key_field.to_string(), insert_terms, question_marks);
     println!("{}", insert_query);
+
+
 
     // Generate the implementation of the IndexInfo trait
     let gen = quote! {
@@ -241,6 +249,38 @@ fn full_component(ast: &DeriveInput, data : &DataStruct) -> TokenStream {
                 }
             }
         }
+
+        pub struct #load_all_struct(pub RequestId);
+
+        #[async_trait]
+        impl CustomDatabaseQuery<AnyDatabaseResource, #ident> for #load_all_struct {
+            async fn query(
+                &self,
+                tr: DatabaseTransaction<AnyDatabaseResource>,
+            ) -> Result<Vec<(DatabaseEntity, #ident)>, ()> {
+                let mut guard = tr.lock().await;
+                let tr = guard.a.as_mut().unwrap();
+                let db_entity_and_components = sqlx::query_as::<_, DataseBaseEntityAndComponent<#ident>>(#load_all_query)
+                    .fetch_all(&mut **tr)
+                    .await
+                    .unwrap();
+
+                let db_entity_and_components = db_entity_and_components
+                    .into_iter()
+                    .map(|db_entity_and_component| {
+                        let mut entity = db_entity_and_component.entity;
+                        entity.request = self.0;
+                        (
+                            entity,
+                            db_entity_and_component.component,
+                        )
+                    })
+                    .collect();
+
+                Ok(db_entity_and_components)
+            }
+        }
+
     };
 
     // Convert the generated code into a token stream and return it
