@@ -14,6 +14,7 @@ mod tests {
 
     #[derive(DBQueryDerive, FromRow)]
     #[table_name = "test"]
+    #[allow(dead_code)]
     struct Test {
         id: i32,
         name: String,
@@ -23,20 +24,5 @@ mod tests {
     #[derive(DBQueryDerive, FromRow)]
     #[table_name = "test"]
     struct MarkerTest {
-    }
-
-    fn test() {
-        // let t = Test {
-        //     id: 1,
-        //     name: "test".to_string(),
-        //     price: 1.0,
-        // };
-        // let e = bevy_erm::DatabaseEntityId::new(1);
-        // let mut tr = bevy_erm::AnyDatabaseResource::Transaction::new();
-        // let r = Test::get(&mut tr, &e);
-        // match r {
-        //     Ok(_) => (),
-        //     Err(_) => (),
-        // }
     }
 }
