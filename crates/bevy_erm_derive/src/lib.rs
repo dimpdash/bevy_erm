@@ -203,7 +203,6 @@ fn full_component(ast: &DeriveInput, data: &DataStruct) -> TokenStream {
         .map(|field| field.ident.clone().unwrap().to_string())
         .collect();
 
-    println!("{:?}", field_names);
 
     // select query
     let selection_terms = field_names.join(", ");
@@ -211,7 +210,6 @@ fn full_component(ast: &DeriveInput, data: &DataStruct) -> TokenStream {
         "SELECT {}, {} FROM {} WHERE {} = ?",
         main_key_field, selection_terms, table_name, main_key_field
     );
-    println!("{}", selection_query);
 
     let update_terms = field_names.join(" = ?, ");
     let update_query = format!(
@@ -235,8 +233,6 @@ fn full_component(ast: &DeriveInput, data: &DataStruct) -> TokenStream {
 
     let load_all_query_impl = get_load_all_query_impl(ast, data, load_all_query);
 
-    println!("{}", update_query);
-    println!("{}", binds);
 
     let insert_terms = field_names.join(", ");
     let question_marks = field_names
@@ -248,7 +244,6 @@ fn full_component(ast: &DeriveInput, data: &DataStruct) -> TokenStream {
         "INSERT INTO {} ({}, {}) VALUES (?,{})",
         table_name, main_key_field, insert_terms, question_marks
     );
-    println!("{}", insert_query);
 
     // Generate the implementation of the IndexInfo trait
     let gen = quote! {
