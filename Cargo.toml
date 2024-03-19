@@ -30,8 +30,8 @@ generational-arena = "0.2.9"
 bevy_reflect = "0.12.1"
 bevy_ecs_macros = "0.12.1"
 bevy_utils = "0.12.1"
-bevy_erm_core = {path = "./crates/bevy_erm_core" }
-bevy_erm_derive = {path = "./crates/bevy_erm_derive" }
+bevy_erm_core = {path = "./crates/bevy_erm_core", version = "0.0.1"}
+bevy_erm_derive = {path = "./crates/bevy_erm_derive", version = "0.0.1" }
 
 [dev-dependencies]
 prettytable-rs = "0.10.0"
