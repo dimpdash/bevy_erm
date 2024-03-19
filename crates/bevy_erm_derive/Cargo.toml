@@ -1,7 +1,16 @@
 [package]
 name = "bevy_erm_derive"
 version = "0.0.1"
-edition = "2021"
+description = "A entity relational mapper derive macros"
+readme = "README.md"
+keywords = [
+    "ecs",
+    "bevy",
+    "orm",
+]
+repository = "https://github.com/dimpdash/bevy_erm"
+license = "Apache-2.0"
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
