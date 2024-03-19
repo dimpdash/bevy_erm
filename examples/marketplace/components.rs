@@ -2,7 +2,7 @@ use bevy_ecs::component::Component;
 use bevy_erm::*;
 use bevy_erm_derive::DBQueryDerive;
 use async_trait::async_trait;
-use sqlx;
+
 use bevy_erm_core::database_query::{CustomDatabaseQuery, DatabaseTransaction};
 
 #[derive(Component, Debug, Default, Clone, sqlx::FromRow, DBQueryDerive)]
