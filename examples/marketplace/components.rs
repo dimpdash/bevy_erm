@@ -22,7 +22,7 @@ pub struct Seller {}
 #[table_name = "users"]
 pub struct Buyer {}
 
-#[derive(Component, Debug, Default, Clone, DBQueryDerive)]
+#[derive(Component, Debug, Default, Clone, DBQueryDerive, sqlx::FromRow)]
 #[table_name = "items"]
 pub struct MarketItem {
     pub seller_id: DatabaseEntityId,
@@ -30,28 +30,9 @@ pub struct MarketItem {
     pub price: i32,
 }
 
-impl FromRow<'_, sqlx::sqlite::SqliteRow> for MarketItem {
-    fn from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Self, sqlx::Error> {
-        Ok(MarketItem {
-            seller_id: row.try_get("seller_id")?,
-            name: row.get("name"),
-            price: row.get("price"),
-        })
-    }
-}
-
-#[derive(Component, Debug, Default, Clone, DBQueryDerive)]
+#[derive(Component, Debug, Default, Clone, DBQueryDerive, sqlx::FromRow)]
 #[table_name = "purchased_items"]
 pub struct PurchasedItem {
     pub item: DatabaseEntityId,
     pub buyer: DatabaseEntityId,
-}
-
-impl FromRow<'_, sqlx::sqlite::SqliteRow> for PurchasedItem {
-    fn from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Self, sqlx::Error> {
-        Ok(PurchasedItem {
-            item: row.try_get("item")?,
-            buyer: row.try_get("buyer")?,
-        })
-    }
 }
