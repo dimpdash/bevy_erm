@@ -1,6 +1,7 @@
 use casey::lower;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
+extern crate syn;
 use syn::{Data, DataStruct, DeriveInput, Ident};
 extern crate proc_macro;
 extern crate casey;
