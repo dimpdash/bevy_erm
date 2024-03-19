@@ -79,7 +79,7 @@ Individual user requests are passed into the ECS as events. The systems can use 
 ```
 
 # Usage
-Currently only SQLite database has been developed. So this is all for a SQLite database. Feel free to add an issue for an new database resource.
+Currently only SQLite database has been developed as a `Database Resource` implementation. So this is all for a SQLite database. Feel free to add an issue for an new database resource.
 
 Use the `DBQueryDerive` derive marco to generate the component mapper to map the database row into the component. Each attribute
 on the struct is treated as column in the SQLite database.
