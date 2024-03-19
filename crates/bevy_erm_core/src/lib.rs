@@ -22,9 +22,8 @@ pub struct DataseBaseEntityAndComponent<C> {
 
 impl FromRow<'_, sqlx::sqlite::SqliteRow> for DatabaseEntity {
     fn from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Self, sqlx::Error> {
-
         Ok(DatabaseEntity {
-            id : row.try_get("id")?,
+            id: row.try_get("id")?,
             persisted: Persisted(true),
             dirty: false,
             //Change when instantiated
@@ -33,10 +32,10 @@ impl FromRow<'_, sqlx::sqlite::SqliteRow> for DatabaseEntity {
     }
 }
 
-impl<'a, C: FromRow<'a, sqlx::sqlite::SqliteRow>> FromRow<'a, sqlx::sqlite::SqliteRow> for DataseBaseEntityAndComponent<C> {
+impl<'a, C: FromRow<'a, sqlx::sqlite::SqliteRow>> FromRow<'a, sqlx::sqlite::SqliteRow>
+    for DataseBaseEntityAndComponent<C>
+{
     fn from_row(row: &'a sqlx::sqlite::SqliteRow) -> Result<Self, sqlx::Error> {
-
-        
         Ok(DataseBaseEntityAndComponent {
             entity: DatabaseEntity::from_row(row)?,
             component: C::from_row(row)?,

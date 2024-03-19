@@ -1,7 +1,7 @@
+use async_trait::async_trait;
 use bevy_ecs::component::Component;
 use bevy_erm::*;
 use bevy_erm_derive::DBQueryDerive;
-use async_trait::async_trait;
 
 use bevy_erm_core::database_query::{CustomDatabaseQuery, DatabaseTransaction};
 

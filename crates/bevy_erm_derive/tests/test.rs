@@ -1,11 +1,11 @@
 //test
 #[cfg(test)]
 mod tests {
-    use bevy_erm_derive::DBQueryDerive;
-    use bevy_erm_core::ComponentMapper;
-    use sqlx::prelude::FromRow;
     use async_trait::async_trait;
-    use sqlx;
+    use bevy_erm_core::ComponentMapper;
+    use bevy_erm_derive::DBQueryDerive;
+    use sqlx::prelude::FromRow;
+
     use bevy_erm_core::database_query::{CustomDatabaseQuery, DatabaseTransaction};
 
     pub trait Easy {
@@ -23,6 +23,5 @@ mod tests {
 
     #[derive(DBQueryDerive, FromRow)]
     #[table_name = "test"]
-    struct MarkerTest {
-    }
+    struct MarkerTest {}
 }

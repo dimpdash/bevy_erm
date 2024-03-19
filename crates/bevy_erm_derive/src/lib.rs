@@ -3,7 +3,6 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{self, Data, DataStruct, DeriveInput, Ident};
 extern crate proc_macro;
-use proc_macro2;
 
 #[proc_macro_derive(DBQueryDerive, attributes(main_key, table_name))]
 pub fn query_derive(input: TokenStream) -> TokenStream {
@@ -21,16 +20,18 @@ pub fn query_derive(input: TokenStream) -> TokenStream {
     if data.fields.is_empty() {
         marker_component(&ast, data)
     } else {
-        full_component(&ast, &data)
+        full_component(&ast, data)
     }
 }
 
-fn get_load_all_query_impl(ast: &DeriveInput, _data: &DataStruct, load_all_query: String) ->  proc_macro2::TokenStream {
+fn get_load_all_query_impl(
+    ast: &DeriveInput,
+    _data: &DataStruct,
+    load_all_query: String,
+) -> proc_macro2::TokenStream {
     let ident = &ast.ident;
 
-    
     let load_all_struct = format_ident!("{}QueryLoadAll", ident);
-
 
     quote!(
         pub struct #load_all_struct(pub RequestId);
@@ -64,7 +65,6 @@ fn get_load_all_query_impl(ast: &DeriveInput, _data: &DataStruct, load_all_query
             }
         }
     )
-
 }
 
 fn marker_component(ast: &DeriveInput, data: &DataStruct) -> TokenStream {
@@ -77,26 +77,20 @@ fn marker_component(ast: &DeriveInput, data: &DataStruct) -> TokenStream {
 
     let selection_query = format!(
         "SELECT {} FROM {} WHERE {} = ?",
-        marker_col,
-        table_name,
-        main_key_field.to_string()
+        marker_col, table_name, main_key_field
     );
 
     let update_query = format!(
         "UPDATE {} SET {} = ? WHERE {} = ?",
-        table_name,
-        marker_col,
-        main_key_field.to_string()
+        table_name, marker_col, main_key_field
     );
 
     let load_all_query = format!(
         "SELECT {} FROM {} WHERE {} = ?",
-        main_key_field.to_string(),
-        table_name,
-        marker_col
+        main_key_field, table_name, marker_col
     );
 
-    let load_all_query_impl = get_load_all_query_impl(&ast, &data, load_all_query);
+    let load_all_query_impl = get_load_all_query_impl(ast, data, load_all_query);
 
     let gen = quote! {
         use bevy_erm_core::*;
@@ -182,15 +176,11 @@ fn get_table_name(ast: &DeriveInput) -> String {
         panic!("table_name attribute must be a string");
     };
 
-    let table_name = table_name.value();
-
-    table_name
+    table_name.value()
 }
 
 fn get_main_key(_ast: &DeriveInput) -> Ident {
-    let main_key_field = syn::parse_str::<Ident>("id").unwrap();
-
-    main_key_field
+    syn::parse_str::<Ident>("id").unwrap()
 }
 
 fn full_component(ast: &DeriveInput, data: &DataStruct) -> TokenStream {
@@ -210,10 +200,7 @@ fn full_component(ast: &DeriveInput, data: &DataStruct) -> TokenStream {
         .fields
         .iter()
         .filter(|field| field.ident != Some(main_key_field.clone()))
-        .map(|field| {
-            let s = field.ident.clone().unwrap().to_string();
-            s.into()
-        })
+        .map(|field| field.ident.clone().unwrap().to_string())
         .collect();
 
     println!("{:?}", field_names);
@@ -222,24 +209,19 @@ fn full_component(ast: &DeriveInput, data: &DataStruct) -> TokenStream {
     let selection_terms = field_names.join(", ");
     let selection_query = format!(
         "SELECT {}, {} FROM {} WHERE {} = ?",
-        main_key_field.to_string(),
-        selection_terms,
-        table_name,
-        main_key_field.to_string()
+        main_key_field, selection_terms, table_name, main_key_field
     );
     println!("{}", selection_query);
 
     let update_terms = field_names.join(" = ?, ");
     let update_query = format!(
         "UPDATE {} SET {} = ? WHERE {} = ?",
-        table_name,
-        update_terms,
-        main_key_field.to_string()
+        table_name, update_terms, main_key_field
     );
 
     let binds = field_names
         .iter()
-        .filter(|field| field.as_str() != main_key_field.to_string())
+        .filter(|field| main_key_field != field.as_str())
         .map(|field| format_ident!("{}", field));
 
     let binds = quote! {
@@ -248,9 +230,7 @@ fn full_component(ast: &DeriveInput, data: &DataStruct) -> TokenStream {
 
     let load_all_query = format!(
         "SELECT {}, {} FROM {}",
-        main_key_field.to_string(),
-        selection_terms,
-        table_name
+        main_key_field, selection_terms, table_name
     );
 
     let load_all_query_impl = get_load_all_query_impl(ast, data, load_all_query);
@@ -266,10 +246,7 @@ fn full_component(ast: &DeriveInput, data: &DataStruct) -> TokenStream {
         .join(", ");
     let insert_query = format!(
         "INSERT INTO {} ({}, {}) VALUES (?,{})",
-        table_name,
-        main_key_field.to_string(),
-        insert_terms,
-        question_marks
+        table_name, main_key_field, insert_terms, question_marks
     );
     println!("{}", insert_query);
 

@@ -124,6 +124,3 @@ impl IndexInfo for RequestIdIndex {
         c.request
     }
 }
-
-
-
