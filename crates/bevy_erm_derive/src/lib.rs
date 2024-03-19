@@ -1,10 +1,7 @@
-use std::fmt::Debug;
-
-use bevy_erm_core::{AnyDatabaseResource, ComponentMapper, DatabaseResource};
 use casey::lower;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{self, token::Token, Data, DataStruct, DeriveInput, Ident};
+use syn::{self, Data, DataStruct, DeriveInput, Ident};
 extern crate proc_macro;
 use proc_macro2;
 
@@ -28,11 +25,8 @@ pub fn query_derive(input: TokenStream) -> TokenStream {
     }
 }
 
-fn get_load_all_query_impl(ast: &DeriveInput, data: &DataStruct, load_all_query: String) ->  proc_macro2::TokenStream {
+fn get_load_all_query_impl(ast: &DeriveInput, _data: &DataStruct, load_all_query: String) ->  proc_macro2::TokenStream {
     let ident = &ast.ident;
-    let marker_col = lower!(ident);
-    let table_name = get_table_name(ast);
-    let main_key_field = get_main_key(ast);
 
     
     let load_all_struct = format_ident!("{}QueryLoadAll", ident);

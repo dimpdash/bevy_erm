@@ -1,8 +1,6 @@
 use bevy_ecs::component::Component;
 use bevy_erm::*;
 use bevy_erm_derive::DBQueryDerive;
-use sqlx::{FromRow, Row};
-use tokio::main;
 use async_trait::async_trait;
 use sqlx;
 use bevy_erm_core::database_query::{CustomDatabaseQuery, DatabaseTransaction};
