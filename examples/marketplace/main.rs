@@ -30,7 +30,7 @@ impl Plugin for MarketplacePlugin {
                         Option<&Seller>,
                         Option<&MarketItem>,
                     ),
-                    AnyDatabaseResource,
+                    SqlxSqliteDatabaseResource,
                 >,
             )
             .add_event::<Purchase>()

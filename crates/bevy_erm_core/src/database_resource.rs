@@ -42,11 +42,11 @@ pub struct DatabaseHandle {
 }
 
 #[derive(Resource, Debug)]
-pub struct AnyDatabaseResource {
+pub struct SqlxSqliteDatabaseResource {
     db: DatabaseHandle,
 }
 
-impl Default for AnyDatabaseResource {
+impl Default for SqlxSqliteDatabaseResource {
     fn default() -> Self {
         let pool = RwLock::new(
             block_on(
@@ -62,14 +62,14 @@ impl Default for AnyDatabaseResource {
             tr,
             min_key: RwLock::new(0),
         };
-        AnyDatabaseResource { db }
+        SqlxSqliteDatabaseResource { db }
     }
 }
 
 unsafe impl Sync for DatabaseHandle {}
 unsafe impl Send for DatabaseHandle {}
 
-unsafe impl Sync for AnyDatabaseResource {}
+unsafe impl Sync for SqlxSqliteDatabaseResource {}
 
 #[derive(Debug)]
 pub struct A {
@@ -79,7 +79,7 @@ pub struct A {
 unsafe impl Send for A {}
 unsafe impl Sync for A {}
 
-impl DatabaseResource for AnyDatabaseResource {
+impl DatabaseResource for SqlxSqliteDatabaseResource {
     type Transaction = Arc<Mutex<A>>;
 
     // Rather than actually querying the database for key just hold on to the last key we had to issue

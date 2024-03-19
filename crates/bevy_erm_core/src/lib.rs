@@ -7,7 +7,7 @@ pub use database_resource::*;
 
 use database_query::{DatabaseEntityWithRequest, DatabaseQuery as DatabaseQueryInternal};
 pub type DatabaseQuery<'w, 's, DBQueryInfo> =
-    DatabaseQueryInternal<'w, 's, DBQueryInfo, AnyDatabaseResource>;
+    DatabaseQueryInternal<'w, 's, DBQueryInfo, SqlxSqliteDatabaseResource>;
 
 pub use database_query::ComponentMapper;
 

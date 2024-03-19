@@ -57,7 +57,7 @@ pub fn purchase_system(
     });
 }
 
-pub fn create_tables(db: Res<AnyDatabaseResource>, _print_tables: EventWriter<PrintTable>) {
+pub fn create_tables(db: Res<SqlxSqliteDatabaseResource>, _print_tables: EventWriter<PrintTable>) {
     println!("Creating tables");
     let request = db.start_new_transaction();
     block_on(async {
@@ -179,6 +179,7 @@ pub fn print_users_table(
     mut print_table_events: EventReader<PrintTable>,
 ) {
     block_on(async {
+
         for print_table in print_table_events.read() {
             let users = {
                 let users = users
@@ -250,7 +251,7 @@ pub fn flush_purchase(
 pub fn poll_webserver_for_requests(
     mut purchase_events: EventWriter<Purchase>,
     _get_seller_items: EventWriter<GetSellerItems>,
-    db: Res<AnyDatabaseResource>,
+    db: Res<SqlxSqliteDatabaseResource>,
     webserver: ResMut<WebServer>,
     exit: EventReader<AppExit>,
 ) {
@@ -284,7 +285,7 @@ pub fn poll_webserver_for_requests(
 pub fn should_exit(
     mut exit: EventWriter<AppExit>,
     mut print_tables: EventWriter<PrintTable>,
-    db: Res<AnyDatabaseResource>,
+    db: Res<SqlxSqliteDatabaseResource>,
     webserver: Res<WebServer>,
 ) {
     if webserver.should_exit() {

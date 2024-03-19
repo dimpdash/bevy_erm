@@ -37,10 +37,10 @@ fn get_load_all_query_impl(
         pub struct #load_all_struct(pub RequestId);
 
         #[async_trait]
-        impl CustomDatabaseQuery<AnyDatabaseResource, #ident> for #load_all_struct {
+        impl CustomDatabaseQuery<SqlxSqliteDatabaseResource, #ident> for #load_all_struct {
             async fn query(
                 &self,
-                tr: DatabaseTransaction<AnyDatabaseResource>,
+                tr: DatabaseTransaction<SqlxSqliteDatabaseResource>,
             ) -> Result<Vec<(DatabaseEntity, #ident)>, ()> {
                 let mut guard = tr.lock().await;
                 let tr = guard.a.as_mut().unwrap();
@@ -98,7 +98,7 @@ fn marker_component(ast: &DeriveInput, data: &DataStruct) -> TokenStream {
         #[async_trait]
         impl ComponentMapper for #ident {
             type Component = #ident;
-            type Executor = <bevy_erm_core::AnyDatabaseResource as DatabaseResource>::Transaction;
+            type Executor = <bevy_erm_core::SqlxSqliteDatabaseResource as DatabaseResource>::Transaction;
 
             async fn get<'c>(
                 e: &mut Self::Executor,
@@ -252,7 +252,7 @@ fn full_component(ast: &DeriveInput, data: &DataStruct) -> TokenStream {
         #[async_trait]
         impl ComponentMapper for #ident {
             type Component = #ident;
-            type Executor = <bevy_erm_core::AnyDatabaseResource as DatabaseResource>::Transaction;
+            type Executor = <bevy_erm_core::SqlxSqliteDatabaseResource as DatabaseResource>::Transaction;
 
             async fn get<'c>(
                 e: &mut Self::Executor,
