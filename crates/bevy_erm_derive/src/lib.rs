@@ -239,7 +239,7 @@ fn full_component(ast: &DeriveInput, data: &DataStruct) -> TokenStream {
 
     let binds = field_names
         .iter()
-        .filter(|field| field.as_str() != "id")
+        .filter(|field| field.as_str() != main_key_field.to_string())
         .map(|field| format_ident!("{}", field));
 
     let binds = quote! {
