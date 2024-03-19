@@ -3,6 +3,9 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{self, Data, DataStruct, DeriveInput, Ident};
 extern crate proc_macro;
+extern crate casey;
+extern crate quote;
+extern crate syn;
 
 #[proc_macro_derive(DBQueryDerive, attributes(main_key, table_name))]
 pub fn query_derive(input: TokenStream) -> TokenStream {
