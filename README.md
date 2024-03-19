@@ -125,6 +125,7 @@ pub fn handle_webserver_events(
                 request,
             };
 
+            // Forward the event on to the next system
             purchase_events.send(purchase_event);
         } else {
             // All connections are used 
