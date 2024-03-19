@@ -115,7 +115,7 @@ pub fn handle_webserver_events(
     db: Res<SqlxSqliteDatabaseResource>,
     webserver: Res<WebServer>, // Your own defined resource
 ) {
-    while webserver.is_messages_to_send() {
+    while webserver.messages_to_handle() {
         let http_request = webserver.pop();
         let user_id = http_request.user_id;
 
