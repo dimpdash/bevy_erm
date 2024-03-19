@@ -5,7 +5,6 @@ use bevy_app::{prelude::*, AppExit};
 
 use crate::components::*;
 use crate::events::*;
-use crate::queries::*;
 use crate::resources::*;
 use futures::executor::block_on;
 

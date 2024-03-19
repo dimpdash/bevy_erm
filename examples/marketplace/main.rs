@@ -1,6 +1,5 @@
 mod components;
 mod events;
-mod queries;
 mod resources;
 mod systems;
 
@@ -13,7 +12,6 @@ use bevy_erm::*;
 
 use components::*;
 use events::*;
-use queries::*;
 use resources::*;
 use systems::*;
 

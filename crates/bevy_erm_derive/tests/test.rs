@@ -20,6 +20,11 @@ mod tests {
         price: f32,
     }
 
+    #[derive(DBQueryDerive, FromRow)]
+    #[table_name = "test"]
+    struct MarkerTest {
+    }
+
     fn test() {
         // let t = Test {
         //     id: 1,
