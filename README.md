@@ -148,6 +148,7 @@ pub fn print_user_names(
     users: DatabaseQuery<&User>,
     mut get_user_names_events: EventReader<GetUserNameEvent>,
 ) {
+    block_on(async{
     for get_user_name_event in get_user_names_events.read() {
         let request = get_user_name_event.request;
         let user_id = get_user_name_event.user_id;
@@ -157,6 +158,7 @@ pub fn print_user_names(
 
         println!("{}", user.name);
     }
+    })
 
 }
 ```
