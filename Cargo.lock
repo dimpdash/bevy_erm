@@ -275,7 +275,7 @@ dependencies = [
 
 [[package]]
 name = "bevy_erm"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "async-trait",
  "bevy_app",
